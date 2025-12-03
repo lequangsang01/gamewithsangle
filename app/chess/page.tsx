@@ -182,8 +182,9 @@ export default function ChessPage() {
     return null;
   }, [refreshTick]);
 
-  const canPlay = Boolean(playerName && currentRoomId);
-  const isLocked = (roomState?.players?.length ?? 0) >= 2;
+  const hasTwoPlayers = (roomState?.players?.length ?? 0) >= 2;
+  const canPlay = Boolean(playerName && currentRoomId && hasTwoPlayers);
+  const isLocked = hasTwoPlayers;
 
   const opponentName = useMemo(() => {
     if (!roomState?.players?.length) return null;
@@ -401,7 +402,12 @@ export default function ChessPage() {
     setSelectedSquare(null);
     setLegalTargets(new Set());
     syncRoomState(room ?? null);
-    refreshFromChess();
+    const playersCount = room?.players?.length ?? 0;
+    if (playersCount < 2) {
+      refreshFromChess("Đang chờ người thứ hai vào phòng để bắt đầu ván đấu.");
+    } else {
+      refreshFromChess();
+    }
   }
 
   async function handleJoinRoom() {
@@ -448,7 +454,13 @@ export default function ChessPage() {
 
   function handleSquareClick(row: number, col: number) {
     if (!canPlay) {
-      alert("Hãy tạo hoặc vào phòng trước khi chơi.");
+      if (!currentRoomId) {
+        alert("Hãy tạo hoặc vào phòng trước khi chơi.");
+      } else if (!hasTwoPlayers) {
+        alert("Cần có đủ 2 người trong phòng mới bắt đầu chơi.");
+      } else {
+        alert("Không thể chơi vào lúc này, vui lòng thử lại.");
+      }
       return;
     }
 

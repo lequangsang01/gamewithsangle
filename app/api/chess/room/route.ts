@@ -161,6 +161,16 @@ export async function POST(req: Request) {
       });
     }
 
+    if (!room.players || room.players.length < 2) {
+      return new Response(
+        JSON.stringify({ error: "Cần có đủ 2 người trong phòng trước khi bắt đầu chơi." }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     await col.updateOne(
       { roomId },
       {
