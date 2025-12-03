@@ -400,7 +400,11 @@ export default function ChessPage() {
       return;
     }
 
-    const moves = chessRef.current.moves({ square, verbose: true });
+    const moves = chessRef.current.moves({
+      // chess.js typings mong muốn kiểu Square riêng, cast để phù hợp TS
+      square: square as any,
+      verbose: true,
+    });
     setSelectedSquare(square);
     setLegalTargets(new Set(moves.map((m) => m.to)));
   }
