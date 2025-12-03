@@ -50,6 +50,10 @@ type PostBody =
       action: "move";
       roomId: string;
       move: string;
+    }
+  | {
+      action: "finish";
+      roomId: string;
     };
 
 export async function POST(req: Request) {
@@ -170,6 +174,14 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({ roomId, room: updatedRoom }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  if (body.action === "finish") {
+    const { roomId } = body;
+    await col.deleteOne({ roomId });
+    return new Response(JSON.stringify({ roomId, cleared: true }), {
+      status: 200,
     });
   }
 

@@ -133,6 +133,15 @@ export default function ChessPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedRoomId, setCopiedRoomId] = useState(false);
 
+  function resetLocalGame() {
+    setBoard(createInitialBoard());
+    setTurn("white");
+    setSelected(null);
+    setMoves([]);
+    setCapturedByWhite([]);
+    setCapturedByBlack([]);
+  }
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem("gws_player_name");
@@ -228,23 +237,16 @@ export default function ChessPage() {
       .then((data: { roomId: string; room?: RoomState }) => {
         setCurrentRoomId(data.roomId);
         setInputRoomId(data.roomId);
-        setBoard(createInitialBoard());
-        setTurn("white");
+        resetLocalGame();
         setMoves(formatMovesFromRoom(data.room));
         setRoomState(data.room ?? null);
-        setCapturedByWhite([]);
-        setCapturedByBlack([]);
       })
       .catch(() => {
         // nếu lỗi backend, vẫn cho chơi local
         setCurrentRoomId(id);
         setInputRoomId(id);
-        setBoard(createInitialBoard());
-        setTurn("white");
-        setMoves([]);
+        resetLocalGame();
         setRoomState(null);
-        setCapturedByWhite([]);
-        setCapturedByBlack([]);
       })
       .finally(() => setIsSyncing(false));
   }
@@ -281,12 +283,9 @@ export default function ChessPage() {
       .then((data: { roomId: string; room?: RoomState }) => {
         setCurrentRoomId(data.roomId);
         setInputRoomId(data.roomId);
-        setBoard(createInitialBoard());
-        setTurn("white");
+        resetLocalGame();
         setMoves(formatMovesFromRoom(data.room));
         setRoomState(data.room ?? null);
-        setCapturedByWhite([]);
-        setCapturedByBlack([]);
       })
       .catch((err) => {
         alert(err.message || "Không vào được phòng, thử lại sau.");
@@ -372,6 +371,38 @@ export default function ChessPage() {
     }
   }
 
+  function handleEndGame() {
+    if (!currentRoomId) {
+      resetLocalGame();
+      setRoomState(null);
+      setCurrentRoomId("");
+      setInputRoomId(generateRoomCode());
+      return;
+    }
+
+    const agreed = window.confirm(
+      "Kết thúc ván và xóa dữ liệu phòng này? Không thể hoàn tác."
+    );
+    if (!agreed) return;
+
+    setIsSyncing(true);
+    fetch("/api/chess/room", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "finish", roomId: currentRoomId }),
+    })
+      .catch(() => {
+        // ignore lỗi, vẫn reset local
+      })
+      .finally(() => {
+        resetLocalGame();
+        setRoomState(null);
+        setCurrentRoomId("");
+        setInputRoomId(generateRoomCode());
+        setIsSyncing(false);
+      });
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50 flex items-center justify-center px-4">
       <main className="w-full max-w-6xl py-10 flex flex-col gap-8 md:flex-row">
@@ -443,6 +474,17 @@ export default function ChessPage() {
                 Vào phòng bằng mã
               </button>
             </div>
+            <button
+              onClick={handleEndGame}
+              disabled={isSyncing}
+              className={`col-span-2 rounded-md text-sm font-medium py-2 border transition-colors ${
+                isSyncing
+                  ? "border-zinc-800 text-zinc-500 cursor-wait"
+                  : "border-red-500 text-red-400 hover:bg-red-500/10"
+              }`}
+            >
+              Kết thúc ván và xóa dữ liệu phòng
+            </button>
 
             <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
               <div className="flex items-center gap-2">
@@ -550,6 +592,10 @@ export default function ChessPage() {
               <li>
                 Bản này đang lưu phòng & lịch sử vào MongoDB; bước tiếp theo sẽ
                 bổ sung realtime để 2 máy cùng thấy nước đi ngay lập tức.
+              </li>
+              <li>
+                Khi ván kết thúc, bấm “Kết thúc ván và xóa dữ liệu phòng” để
+                xóa bản ghi trong MongoDB và bắt đầu ván mới sạch sẽ.
               </li>
             </ol>
           </div>
