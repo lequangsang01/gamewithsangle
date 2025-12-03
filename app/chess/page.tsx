@@ -180,6 +180,15 @@ export default function ChessPage() {
   }, [refreshTick]);
 
   const canPlay = Boolean(playerName && currentRoomId);
+  const isLocked = (roomState?.players?.length ?? 0) >= 2;
+
+  const opponentName = useMemo(() => {
+    if (!roomState?.players?.length) return null;
+    const others = roomState.players.filter(
+      (p) => normalize(p.name) !== normalize(playerName)
+    );
+    return others[0]?.name ?? null;
+  }, [roomState, playerName]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -257,6 +266,31 @@ export default function ChessPage() {
     };
     return () => ws.close();
   }, [currentRoomId, playerName]);
+
+  // Polling fallback: nếu socket lỗi, vẫn đồng bộ trạng thái phòng / nước đi
+  useEffect(() => {
+    if (!currentRoomId) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/chess/room?roomId=${currentRoomId}`);
+        if (!res.ok) return;
+        const data: { room?: RoomState | null } = await res.json();
+        if (cancelled || !data.room) return;
+        hydrateFromRoom(data.room);
+      } catch {
+        // ignore, sẽ thử lại sau
+      }
+    };
+
+    poll();
+    const id = window.setInterval(poll, 3500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [currentRoomId]);
 
   function emitSocketMessage(payload: SocketPayload) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
@@ -494,8 +528,6 @@ export default function ChessPage() {
       .catch(() => alert("Không thể sao chép, hãy copy thủ công."));
   }
 
-  const isLocked = (roomState?.players?.length ?? 0) >= 2;
-
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50 flex items-center justify-center px-4">
       <main className="w-full max-w-6xl py-10 flex flex-col gap-8 md:flex-row">
@@ -566,35 +598,47 @@ export default function ChessPage() {
             </button>
 
             <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
-              <div className="flex items-center gap-2">
-                <span>Phòng:</span>
-                {currentRoomId ? (
-                  <>
-                    <span className="font-semibold text-emerald-400">{currentRoomId}</span>
-                    <button
-                      onClick={handleCopyRoomId}
-                      className="rounded-full border border-zinc-700 px-2 py-1 text-[10px] uppercase tracking-wide hover:border-emerald-500"
-                    >
-                      Copy
-                    </button>
-                    {copiedRoomId && <span className="text-emerald-400 text-[10px]">Đã copy</span>}
-                  </>
-                ) : (
-                  <span>Chưa có</span>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span>Phòng:</span>
+                  {currentRoomId ? (
+                    <>
+                      <span className="font-semibold text-emerald-400">{currentRoomId}</span>
+                      <button
+                        onClick={handleCopyRoomId}
+                        className="rounded-full border border-zinc-700 px-2 py-1 text-[10px] uppercase tracking-wide hover:border-emerald-500"
+                      >
+                        Copy
+                      </button>
+                      {copiedRoomId && <span className="text-emerald-400 text-[10px]">Đã copy</span>}
+                    </>
+                  ) : (
+                    <span>Chưa có</span>
+                  )}
+                </div>
+                {opponentName && (
+                  <div className="text-[11px] text-zinc-400">
+                    Đối thủ: <span className="text-zinc-100 font-medium">{opponentName}</span>
+                  </div>
                 )}
               </div>
-              <div className="flex items-center gap-4">
-                <span className={socketStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
-                  Socket: {socketStatus}
-                </span>
-                <span>
-                  Lượt đi: {" "}
-                  <span className={turn === "white" ? "text-zinc-100" : "text-zinc-400"}>
-                    {turn === "white" ? "Trắng" : "Đen"}
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-3">
+                  <span className={socketStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
+                    Socket: {socketStatus}
                   </span>
-                </span>
+                  <span>
+                    Lượt đi:{" "}
+                    <span className={turn === "white" ? "text-zinc-100" : "text-zinc-400"}>
+                      {turn === "white" ? "Trắng" : "Đen"}
+                    </span>
+                  </span>
+                </div>
                 <span>
-                  Bạn cầm: <span className="text-emerald-400 font-semibold">{playerColor === "white" ? "Trắng" : "Đen"}</span>
+                  Bạn cầm:{" "}
+                  <span className="text-emerald-400 font-semibold">
+                    {playerColor === "white" ? "Trắng" : "Đen"}
+                  </span>
                 </span>
               </div>
             </div>
