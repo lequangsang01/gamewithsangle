@@ -137,6 +137,9 @@ export default function ChessPage() {
       ? crypto.randomUUID()
       : `client_${Math.random().toString(36).slice(2)}`
   );
+  const autoJoinRef = useRef(false);
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [copiedInviteUrl, setCopiedInviteUrl] = useState(false);
 
   const boardState = useMemo(() => convertBoard(chessRef.current.board()), [refreshTick]);
   const movesHistory = useMemo(
@@ -247,6 +250,18 @@ export default function ChessPage() {
     handleCreateRoom({ auto: true });
   }, [storedNameLoaded, handleCreateRoom]);
 
+  // Nếu URL có sẵn ?roomId=... thì auto join phòng đó (mời bằng link)
+  useEffect(() => {
+    if (typeof window === "undefined" || autoJoinRef.current) return;
+    const url = new URL(window.location.href);
+    const roomIdFromUrl = url.searchParams.get("roomId");
+    if (!roomIdFromUrl) return;
+    autoJoinRef.current = true;
+    setInputRoomId(roomIdFromUrl.toUpperCase());
+    // auto join, không cần người dùng bấm nút
+    handleJoinRoom();
+  }, [handleJoinRoom]);
+
   useEffect(() => {
     if (typeof window === "undefined" || !currentRoomId) return;
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -266,6 +281,39 @@ export default function ChessPage() {
     };
     return () => ws.close();
   }, [currentRoomId, playerName]);
+
+  // Polling fallback: nếu socket lỗi, vẫn đồng bộ trạng thái phòng / nước đi
+  useEffect(() => {
+    if (!currentRoomId) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/chess/room?roomId=${currentRoomId}`);
+        if (!res.ok) return;
+        const data: { room?: RoomState | null } = await res.json();
+        if (cancelled || !data.room) return;
+        hydrateFromRoom(data.room);
+      } catch {
+        // ignore, sẽ thử lại sau
+      }
+    };
+
+    poll();
+    const id = window.setInterval(poll, 3500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [currentRoomId]);
+
+  // Tạo link mời (share URL) khi có roomId
+  useEffect(() => {
+    if (typeof window === "undefined" || !currentRoomId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("roomId", currentRoomId);
+    setInviteUrl(url.toString());
+  }, [currentRoomId]);
 
   // Polling fallback: nếu socket lỗi, vẫn đồng bộ trạng thái phòng / nước đi
   useEffect(() => {
@@ -528,6 +576,17 @@ export default function ChessPage() {
       .catch(() => alert("Không thể sao chép, hãy copy thủ công."));
   }
 
+  function handleCopyInviteUrl() {
+    if (!inviteUrl || typeof navigator === "undefined") return;
+    navigator.clipboard
+      .writeText(inviteUrl)
+      .then(() => {
+        setCopiedInviteUrl(true);
+        window.setTimeout(() => setCopiedInviteUrl(false), 1500);
+      })
+      .catch(() => alert("Không thể sao chép link, hãy copy thủ công."));
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50 flex items-center justify-center px-4">
       <main className="w-full max-w-6xl py-10 flex flex-col gap-8 md:flex-row">
@@ -685,6 +744,44 @@ export default function ChessPage() {
         </section>
 
         <aside className="w-full md:w-1/3 space-y-4">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-xs text-zinc-300 space-y-2">
+            <h2 className="text-sm font-semibold mb-1">Mời bạn bè bằng link / QR</h2>
+            <p className="text-zinc-400">
+              Gửi link này cho đối thủ, họ chỉ cần mở là sẽ tự vào đúng phòng cờ vua của bạn.
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={inviteUrl || "Chưa có phòng"}
+                  className="flex-1 rounded-md bg-zinc-950 border border-zinc-800 px-2 py-1 text-[11px] text-zinc-300 truncate"
+                />
+                <button
+                  onClick={handleCopyInviteUrl}
+                  disabled={!inviteUrl}
+                  className="rounded-md border border-zinc-700 px-2 py-1 text-[10px] uppercase tracking-wide hover:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Copy
+                </button>
+              </div>
+              {copiedInviteUrl && (
+                <div className="text-[11px] text-emerald-400">Đã sao chép đường dẫn mời.</div>
+              )}
+              {inviteUrl && (
+                <div className="flex flex-col items-center gap-1 pt-2">
+                  <span className="text-[11px] text-zinc-500">Quét QR để vào phòng:</span>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
+                      inviteUrl
+                    )}`}
+                    alt="QR vào phòng cờ vua"
+                    className="w-28 h-28 rounded-md border border-zinc-800 bg-zinc-950"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-xs text-zinc-300 space-y-1">
             <h2 className="text-sm font-semibold mb-1">Luồng chơi</h2>
             <ol className="list-decimal list-inside space-y-1">

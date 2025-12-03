@@ -34,11 +34,11 @@ export default function Home() {
                 <div>
                   <h2 className="text-xl font-semibold mb-1">{game.name}</h2>
                   <p className="text-sm text-zinc-400">{game.description}</p>
-                </div>
+        </div>
                 <span className="text-xs rounded-full border border-emerald-500/40 text-emerald-400 px-3 py-1">
                   Đang mở
                 </span>
-              </div>
+        </div>
             </Link>
           ))}
         </section>
