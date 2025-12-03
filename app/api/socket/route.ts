@@ -25,6 +25,7 @@ function broadcast(roomId: string, data: string, skip?: WebSocket) {
       socket.send(data);
     } catch {
       // swallow network errors
+      
     }
   }
 }
