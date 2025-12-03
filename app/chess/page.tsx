@@ -14,7 +14,7 @@ type Piece = {
 
 type BoardState = (Piece | null)[][];
 
-type Player = { name: string; color: Color };
+type Player = { name: string; color: Color; avatar?: string };
 
 type RoomState = {
   roomId: string;
@@ -51,6 +51,8 @@ const BOARD_SIZE = 8;
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const randomWordsA = ["Sáng", "Đêm", "Lửa", "Gió", "Biển", "Trăng", "Mây"];
 const randomWordsB = ["Mã", "Hậu", "Tượng", "Xe", "Tốt", "Vua"];
+
+const AVATARS = ["🐱", "🐶", "🐼", "🐯", "🐵", "🐸", "🐧", "🐰", "🐻", "🦊"];
 
 const normalize = (value: string) => value.trim().toLowerCase();
 
@@ -116,6 +118,11 @@ export default function ChessPage() {
 
   const [playerName, setPlayerName] = useState(() => generateRandomName());
   const [storedNameLoaded, setStoredNameLoaded] = useState(false);
+  const [avatar, setAvatar] = useState<string>(() => {
+    const idx = Math.floor(Math.random() * AVATARS.length);
+    return AVATARS[idx]!;
+  });
+  const [storedAvatarLoaded, setStoredAvatarLoaded] = useState(false);
   const [currentRoomId, setCurrentRoomId] = useState("");
   const [inputRoomId, setInputRoomId] = useState(() => generateRoomCode());
 
@@ -140,6 +147,9 @@ export default function ChessPage() {
   const autoJoinRef = useRef(false);
   const [inviteUrl, setInviteUrl] = useState("");
   const [copiedInviteUrl, setCopiedInviteUrl] = useState(false);
+  const [activeRooms, setActiveRooms] = useState<
+    { roomId: string; players: Player[]; updatedAt?: string | null }[]
+  >([]);
 
   const boardState = useMemo(() => convertBoard(chessRef.current.board()), [refreshTick]);
   const movesHistory = useMemo(
@@ -182,9 +192,8 @@ export default function ChessPage() {
     return null;
   }, [refreshTick]);
 
-  const hasTwoPlayers = (roomState?.players?.length ?? 0) >= 2;
-  const canPlay = Boolean(playerName && currentRoomId && hasTwoPlayers);
-  const isLocked = hasTwoPlayers;
+  const canPlay = Boolean(playerName && currentRoomId);
+  const isLocked = (roomState?.players?.length ?? 0) >= 2;
 
   const opponentName = useMemo(() => {
     if (!roomState?.players?.length) return null;
@@ -192,6 +201,14 @@ export default function ChessPage() {
       (p) => normalize(p.name) !== normalize(playerName)
     );
     return others[0]?.name ?? null;
+  }, [roomState, playerName]);
+
+  const opponentAvatar = useMemo(() => {
+    if (!roomState?.players?.length) return null;
+    const others = roomState.players.filter(
+      (p) => normalize(p.name) !== normalize(playerName)
+    );
+    return others[0]?.avatar ?? null;
   }, [roomState, playerName]);
 
   useEffect(() => {
@@ -205,6 +222,25 @@ export default function ChessPage() {
     setStoredNameLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load / persist avatar to localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("gws_player_avatar");
+    if (stored) {
+      setAvatar(stored);
+    } else {
+      window.localStorage.setItem("gws_player_avatar", avatar);
+    }
+    setStoredAvatarLoaded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!storedAvatarLoaded || !avatar) return;
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("gws_player_avatar", avatar);
+  }, [avatar, storedAvatarLoaded]);
 
   useEffect(() => {
     if (!storedNameLoaded || !playerName) return;
@@ -224,7 +260,7 @@ export default function ChessPage() {
         const res = await fetch("/api/chess/room", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "create", playerName, roomId }),
+          body: JSON.stringify({ action: "create", playerName, roomId, avatar }),
         });
         const data: { roomId: string; room?: RoomState | null } = await res.json();
         setCurrentRoomId(data.roomId);
@@ -242,11 +278,17 @@ export default function ChessPage() {
         setIsSyncing(false);
       }
     },
-    [playerName]
+    [playerName, avatar]
   );
 
   useEffect(() => {
     if (!storedNameLoaded || autoCreateRef.current) return;
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      const roomIdFromUrl = url.searchParams.get("roomId");
+      // Nếu vào bằng link có sẵn roomId thì KHÔNG auto create phòng mới
+      if (roomIdFromUrl) return;
+    }
     autoCreateRef.current = true;
     handleCreateRoom({ auto: true });
   }, [storedNameLoaded, handleCreateRoom]);
@@ -260,8 +302,8 @@ export default function ChessPage() {
     autoJoinRef.current = true;
     setInputRoomId(roomIdFromUrl.toUpperCase());
     // auto join, không cần người dùng bấm nút
-    handleJoinRoom();
-  }, [handleJoinRoom]);
+    handleJoinRoom(roomIdFromUrl.toUpperCase());
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !currentRoomId) return;
@@ -307,6 +349,32 @@ export default function ChessPage() {
       window.clearInterval(id);
     };
   }, [currentRoomId]);
+
+  // Lấy danh sách phòng đang có người chơi để người dùng có thể join nhanh
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchRooms = async () => {
+      try {
+        const res = await fetch("/api/chess/rooms");
+        if (!res.ok) return;
+        const data: {
+          rooms?: { roomId: string; players: Player[]; updatedAt?: string | null }[];
+        } = await res.json();
+        if (cancelled || !data.rooms) return;
+        setActiveRooms(data.rooms);
+      } catch {
+        // ignore
+      }
+    };
+
+    fetchRooms();
+    const id = window.setInterval(fetchRooms, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   // Tạo link mời (share URL) khi có roomId
   useEffect(() => {
@@ -381,7 +449,6 @@ export default function ChessPage() {
     if (!room) return;
     setRoomState(room);
     setCurrentRoomId(room.roomId);
-    setInputRoomId(room.roomId);
     const me = room.players?.find((p) => normalize(p.name) === normalize(playerName));
     if (me) {
       setPlayerColor(me.color);
@@ -402,20 +469,15 @@ export default function ChessPage() {
     setSelectedSquare(null);
     setLegalTargets(new Set());
     syncRoomState(room ?? null);
-    const playersCount = room?.players?.length ?? 0;
-    if (playersCount < 2) {
-      refreshFromChess("Đang chờ người thứ hai vào phòng để bắt đầu ván đấu.");
-    } else {
-      refreshFromChess();
-    }
+    refreshFromChess();
   }
 
-  async function handleJoinRoom() {
+  async function handleJoinRoom(explicitRoomId?: string) {
     if (!playerName) {
       alert("Nhập tên người chơi trước khi vào phòng.");
       return;
     }
-    const raw = inputRoomId.trim();
+    const raw = (explicitRoomId ?? inputRoomId).trim();
     if (!raw) {
       alert("Nhập mã phòng để vào.");
       return;
@@ -427,7 +489,7 @@ export default function ChessPage() {
       const res = await fetch("/api/chess/room", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "join", playerName, roomId }),
+        body: JSON.stringify({ action: "join", playerName, roomId, avatar }),
       });
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
@@ -435,6 +497,7 @@ export default function ChessPage() {
       }
       const data: { roomId: string; room?: RoomState | null } = await res.json();
       setCurrentRoomId(data.roomId);
+      setInputRoomId(data.roomId);
       hydrateFromRoom(data.room ?? null);
       emitSocketMessage({ type: "room", room: data.room ?? null });
     } catch (err: any) {
@@ -454,13 +517,7 @@ export default function ChessPage() {
 
   function handleSquareClick(row: number, col: number) {
     if (!canPlay) {
-      if (!currentRoomId) {
-        alert("Hãy tạo hoặc vào phòng trước khi chơi.");
-      } else if (!hasTwoPlayers) {
-        alert("Cần có đủ 2 người trong phòng mới bắt đầu chơi.");
-      } else {
-        alert("Không thể chơi vào lúc này, vui lòng thử lại.");
-      }
+      alert("Hãy tạo hoặc vào phòng trước khi chơi.");
       return;
     }
 
@@ -625,6 +682,37 @@ export default function ChessPage() {
               />
             </div>
             <div className="space-y-2">
+              <label className="text-xs text-zinc-400">Avatar</label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idx = Math.floor(Math.random() * AVATARS.length);
+                    setAvatar(AVATARS[idx]!);
+                  }}
+                  className="px-2 py-1 text-[10px] rounded-md border border-zinc-700 hover:border-emerald-500"
+                >
+                  Random
+                </button>
+                <div className="flex flex-wrap gap-1">
+                  {AVATARS.map((icon) => (
+                    <button
+                      key={icon}
+                      type="button"
+                      onClick={() => setAvatar(icon)}
+                      className={`w-7 h-7 flex items-center justify-center rounded-full border text-base ${
+                        avatar === icon
+                          ? "border-emerald-500 bg-emerald-500/10"
+                          : "border-zinc-700 hover:border-emerald-500"
+                      }`}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
               <label className="text-xs text-zinc-400">Mã phòng (auto tạo)</label>
               <input
                 value={inputRoomId}
@@ -648,7 +736,7 @@ export default function ChessPage() {
                 Tạo phòng mới
               </button>
               <button
-                onClick={handleJoinRoom}
+                onClick={() => handleJoinRoom()}
                 disabled={isSyncing}
                 className={`flex-1 rounded-md border border-zinc-700 text-sm font-medium py-2 transition-colors ${
                   isSyncing ? "text-zinc-500 cursor-not-allowed" : "hover:bg-zinc-800"
@@ -688,8 +776,16 @@ export default function ChessPage() {
                   )}
                 </div>
                 {opponentName && (
-                  <div className="text-[11px] text-zinc-400">
-                    Đối thủ: <span className="text-zinc-100 font-medium">{opponentName}</span>
+                  <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                    {opponentAvatar && (
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800">
+                        {opponentAvatar}
+                      </span>
+                    )}
+                    <span>
+                      Đối thủ:{" "}
+                      <span className="text-zinc-100 font-medium">{opponentName}</span>
+                    </span>
                   </div>
                 )}
               </div>
@@ -756,6 +852,52 @@ export default function ChessPage() {
         </section>
 
         <aside className="w-full md:w-1/3 space-y-4">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-xs text-zinc-300 space-y-2">
+            <h2 className="text-sm font-semibold mb-1">Phòng đang có người chơi</h2>
+            {activeRooms.length === 0 && (
+              <p className="text-zinc-500 text-[11px]">Chưa có phòng công khai nào.</p>
+            )}
+            <div className="space-y-2 max-h-52 overflow-y-auto">
+              {activeRooms.map((room) => (
+                <div
+                  key={room.roomId}
+                  className="flex items-center justify-between gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-2 py-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="flex -space-x-1">
+                      {room.players.slice(0, 2).map((p) => (
+                        <div
+                          key={p.name}
+                          className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[13px] border border-zinc-900"
+                        >
+                          {p.avatar || "👤"}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-zinc-400">
+                        {room.players.map((p) => p.name).join(" vs ")}
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-mono">
+                        {room.roomId}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputRoomId(room.roomId);
+                      handleJoinRoom(room.roomId);
+                    }}
+                    className="px-2 py-1 text-[10px] rounded-md border border-emerald-500 text-emerald-400 hover:bg-emerald-500/10"
+                  >
+                    Vào
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-xs text-zinc-300 space-y-2">
             <h2 className="text-sm font-semibold mb-1">Mời bạn bè bằng link / QR</h2>
             <p className="text-zinc-400">

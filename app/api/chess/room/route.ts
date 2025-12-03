@@ -1,6 +1,6 @@
 import clientPromise from "@/lib/mongodb";
 
-type Player = { name: string; color: "white" | "black" };
+type Player = { name: string; color: "white" | "black"; avatar?: string };
 
 interface ChessRoom {
   roomId: string;
@@ -47,11 +47,13 @@ type PostBody =
       action: "create";
       playerName: string;
       roomId?: string;
+      avatar?: string;
     }
   | {
       action: "join";
       playerName: string;
       roomId: string;
+      avatar?: string;
     }
   | {
       action: "move";
@@ -85,7 +87,9 @@ export async function POST(req: Request) {
 
     const nextDoc: ChessRoom = {
       roomId,
-      players: [{ name: body.playerName, color: firstColor }],
+      players: [
+        { name: body.playerName, color: firstColor, avatar: body.avatar },
+      ],
       moves: [],
       fen: INITIAL_FEN,
       turn: "white",
@@ -134,7 +138,11 @@ export async function POST(req: Request) {
         color = players.length % 2 === 0 ? "white" : "black";
       }
 
-      players.push({ name: body.playerName, color });
+      players.push({
+        name: body.playerName,
+        color,
+        avatar: body.avatar,
+      });
 
       await col.updateOne(
         { roomId },
@@ -159,16 +167,6 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ error: "Room không tồn tại" }), {
         status: 404,
       });
-    }
-
-    if (!room.players || room.players.length < 2) {
-      return new Response(
-        JSON.stringify({ error: "Cần có đủ 2 người trong phòng trước khi bắt đầu chơi." }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
     }
 
     await col.updateOne(
