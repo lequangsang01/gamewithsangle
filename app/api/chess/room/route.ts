@@ -6,12 +6,19 @@ interface ChessRoom {
   roomId: string;
   players: Player[];
   moves: string[];
+  fen: string;
+  turn: "white" | "black";
+  roundIndex: number;
+  lastMoveBy?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
 const DB_NAME = "gamewithsangle";
 const COLLECTION = "chess_rooms";
+const INITIAL_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+const normalize = (value: string) => value.trim().toLowerCase();
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -50,6 +57,9 @@ type PostBody =
       action: "move";
       roomId: string;
       move: string;
+      fen: string;
+      turn: "white" | "black";
+      playerName: string;
     }
   | {
       action: "finish";
@@ -65,38 +75,30 @@ export async function POST(req: Request) {
 
   if (body.action === "create") {
     const baseId =
-      body.roomId ??
-      Math.random().toString(36).slice(2, 8).toUpperCase().toString();
-
+      body.roomId ?? Math.random().toString(36).slice(2, 8).toUpperCase();
     const roomId = baseId.toUpperCase();
     const now = new Date();
 
     const existing = await col.findOne({ roomId });
-    if (existing) {
-      // nếu trùng, ta vẫn reset ván mới
-      await col.updateOne(
-        { roomId },
-        {
-          $set: {
-            players: [
-              { name: body.playerName, color: "white" as const },
-            ],
-            moves: [],
-            updatedAt: now,
-          },
-          $setOnInsert: { createdAt: now },
-        },
-        { upsert: true }
-      );
-    } else {
-      await col.insertOne({
-        roomId,
-        players: [{ name: body.playerName, color: "white" as const }],
-        moves: [],
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
+    const roundIndex = existing?.roundIndex ?? 0;
+    const firstColor = roundIndex % 2 === 0 ? "white" : "black";
+
+    const nextDoc: ChessRoom = {
+      roomId,
+      players: [{ name: body.playerName, color: firstColor }],
+      moves: [],
+      fen: INITIAL_FEN,
+      turn: "white",
+      roundIndex,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    await col.updateOne(
+      { roomId },
+      { $set: nextDoc },
+      { upsert: true }
+    );
 
     const room = await col.findOne({ roomId });
 
@@ -117,21 +119,19 @@ export async function POST(req: Request) {
       });
     }
 
-    const players = Array.isArray((room as any).players)
-      ? (room as any).players
-      : [];
-
+    const players = Array.isArray(room.players) ? [...room.players] : [];
     const exists = players.find(
-      (p: any) => p.name?.toLowerCase() === body.playerName.toLowerCase()
+      (p) => normalize(p.name) === normalize(body.playerName)
     );
 
     if (!exists) {
       let color: "white" | "black" = "white";
-      if (players.length === 0) color = "white";
-      else if (players.length === 1) {
+      if (players.length === 0) {
+        color = room.roundIndex % 2 === 0 ? "white" : "black";
+      } else if (players.length === 1) {
         color = players[0].color === "white" ? "black" : "white";
       } else {
-        color = "black";
+        color = players.length % 2 === 0 ? "white" : "black";
       }
 
       players.push({ name: body.playerName, color });
@@ -151,7 +151,7 @@ export async function POST(req: Request) {
   }
 
   if (body.action === "move") {
-    const { roomId, move } = body;
+    const { roomId, move, fen, turn, playerName } = body;
     const now = new Date();
 
     const room = await col.findOne({ roomId });
@@ -165,7 +165,12 @@ export async function POST(req: Request) {
       { roomId },
       {
         $push: { moves: move },
-        $set: { updatedAt: now },
+        $set: {
+          updatedAt: now,
+          fen,
+          turn,
+          lastMoveBy: playerName,
+        },
       }
     );
 
@@ -179,9 +184,42 @@ export async function POST(req: Request) {
 
   if (body.action === "finish") {
     const { roomId } = body;
-    await col.deleteOne({ roomId });
-    return new Response(JSON.stringify({ roomId, cleared: true }), {
+    const now = new Date();
+    const room = await col.findOne({ roomId });
+
+    if (!room) {
+      return new Response(JSON.stringify({ error: "Room không tồn tại" }), {
+        status: 404,
+      });
+    }
+
+    const nextRound = (room.roundIndex ?? 0) + 1;
+    const swappedPlayers: Player[] = (room.players ?? []).map((p) => {
+      const nextColor: Player["color"] =
+        p.color === "white" ? "black" : "white";
+      return { name: p.name, color: nextColor };
+    });
+
+    await col.updateOne(
+      { roomId },
+      {
+        $set: {
+          moves: [],
+          fen: INITIAL_FEN,
+          turn: "white",
+          roundIndex: nextRound,
+          players: swappedPlayers,
+          updatedAt: now,
+        },
+        $unset: { lastMoveBy: "" },
+      }
+    );
+
+    const updatedRoom = await col.findOne({ roomId });
+
+    return new Response(JSON.stringify({ roomId, room: updatedRoom }), {
       status: 200,
+      headers: { "Content-Type": "application/json" },
     });
   }
 
