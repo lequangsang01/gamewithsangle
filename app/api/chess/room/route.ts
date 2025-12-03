@@ -1,5 +1,15 @@
 import clientPromise from "@/lib/mongodb";
 
+type Player = { name: string; color: "white" | "black" };
+
+interface ChessRoom {
+  roomId: string;
+  players: Player[];
+  moves: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 const DB_NAME = "gamewithsangle";
 const COLLECTION = "chess_rooms";
 
@@ -15,7 +25,7 @@ export async function GET(req: Request) {
 
   const client = await clientPromise;
   const db = client.db(DB_NAME);
-  const col = db.collection(COLLECTION);
+  const col = db.collection<ChessRoom>(COLLECTION);
 
   const room = await col.findOne({ roomId });
 
@@ -47,7 +57,7 @@ export async function POST(req: Request) {
 
   const client = await clientPromise;
   const db = client.db(DB_NAME);
-  const col = db.collection(COLLECTION);
+  const col = db.collection<ChessRoom>(COLLECTION);
 
   if (body.action === "create") {
     const baseId =
