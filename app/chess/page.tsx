@@ -258,7 +258,7 @@ export default function ChessPage() {
     return () => ws.close();
   }, [currentRoomId, playerName]);
 
-  function emitSocketMessage(payload: Omit<SocketPayload, "clientId">) {
+  function emitSocketMessage(payload: SocketPayload) {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
     socketRef.current.send(
       JSON.stringify({ ...payload, clientId: clientIdRef.current })
@@ -444,7 +444,7 @@ export default function ChessPage() {
         type: "move",
         fen: payload.fen,
         move: { from, to },
-        turn: payload.turn,
+        turn: payload.turn as Color,
         room: data?.room ?? null,
         playerName,
       });
