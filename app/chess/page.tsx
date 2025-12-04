@@ -137,6 +137,7 @@ export default function ChessPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedRoomId, setCopiedRoomId] = useState(false);
   const [mqttStatus, setMqttStatus] = useState<MQTTStatus>("closed");
+  const [onlineClients, setOnlineClients] = useState<Set<string>>(new Set());
 
   const mqttClientRef = useRef<MQTTClient | null>(null);
   const autoCreateRef = useRef(false);
@@ -194,7 +195,8 @@ export default function ChessPage() {
   }, [refreshTick]);
 
   const canPlay = Boolean(playerName && currentRoomId);
-  const isLocked = (roomState?.players?.length ?? 0) >= 2;
+  // Lock dựa trên số clients MQTT đang online, không phải players trong DB
+  const isLocked = onlineClients.size >= 2;
 
   const opponentName = useMemo(() => {
     if (!roomState?.players?.length) return null;
@@ -314,6 +316,23 @@ export default function ChessPage() {
       mqttClientRef.current = new MQTTClient(clientIdRef.current);
       mqttClientRef.current.setOnStatusChange((status) => {
         setMqttStatus(status);
+        // Khi connected, publish presence và thêm mình vào online clients
+        if (status === "connected" && mqttClientRef.current) {
+          setOnlineClients((prev) => new Set([...prev, clientIdRef.current]));
+          // Publish presence để các clients khác biết
+          mqttClientRef.current.publish("presence", {
+            playerName,
+            clientId: clientIdRef.current,
+            action: "connect",
+          });
+        } else if (status === "closed" || status === "error") {
+          // Remove self khi disconnect
+          setOnlineClients((prev) => {
+            const next = new Set(prev);
+            next.delete(clientIdRef.current);
+            return next;
+          });
+        }
       });
       mqttClientRef.current.setOnMessage((message) => {
         handleMQTTMessage(message);
@@ -323,18 +342,28 @@ export default function ChessPage() {
     mqttClientRef.current.connect(currentRoomId, playerName);
 
     return () => {
-      if (mqttClientRef.current) {
+      if (mqttClientRef.current && mqttStatus === "connected") {
+        // Publish disconnect message trước khi disconnect
+        mqttClientRef.current.publish("presence", {
+          playerName,
+          clientId: clientIdRef.current,
+          action: "disconnect",
+        });
         mqttClientRef.current.disconnect();
       }
+      setOnlineClients(new Set());
     };
   }, [currentRoomId, playerName]);
 
-  // Polling fallback: nếu socket lỗi, vẫn đồng bộ trạng thái phòng / nước đi
+  // Polling fallback: chỉ khi MQTT disconnected, hoặc để verify state mỗi 60s
   useEffect(() => {
     if (!currentRoomId) return;
     let cancelled = false;
 
     const poll = async () => {
+      // Nếu MQTT đang connected, không cần polling (real-time qua MQTT)
+      if (mqttStatus === "connected") return;
+      
       try {
         const res = await fetch(`/api/chess/room?roomId=${currentRoomId}`);
         if (!res.ok) return;
@@ -346,15 +375,20 @@ export default function ChessPage() {
       }
     };
 
-    poll();
-    const id = window.setInterval(poll, 3500);
+    // Poll ngay lập tức nếu MQTT disconnected
+    if (mqttStatus !== "connected") {
+      poll();
+    }
+    
+    // Poll mỗi 60s để verify state (backup, không cần thiết nếu MQTT hoạt động tốt)
+    const id = window.setInterval(poll, 60000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [currentRoomId]);
+  }, [currentRoomId, mqttStatus]);
 
-  // Lấy danh sách phòng đang có người chơi để người dùng có thể join nhanh
+  // Lấy danh sách phòng đang có người chơi (poll ít hơn, không cần real-time)
   useEffect(() => {
     let cancelled = false;
 
@@ -373,7 +407,8 @@ export default function ChessPage() {
     };
 
     fetchRooms();
-    const id = window.setInterval(fetchRooms, 5000);
+    // Poll mỗi 30s thay vì 5s (không cần real-time cho rooms list)
+    const id = window.setInterval(fetchRooms, 30000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -386,32 +421,7 @@ export default function ChessPage() {
     const url = new URL(window.location.href);
     url.searchParams.set("roomId", currentRoomId);
     setInviteUrl(url.toString());
-  }, [currentRoomId]);
-
-  // Polling fallback: nếu socket lỗi, vẫn đồng bộ trạng thái phòng / nước đi
-  useEffect(() => {
-    if (!currentRoomId) return;
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/chess/room?roomId=${currentRoomId}`);
-        if (!res.ok) return;
-        const data: { room?: RoomState | null } = await res.json();
-        if (cancelled || !data.room) return;
-        hydrateFromRoom(data.room);
-      } catch {
-        // ignore, sẽ thử lại sau
-      }
-    };
-
-    poll();
-    const id = window.setInterval(poll, 3500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [currentRoomId]);
+  }, [currentRoomId, mqttStatus]);
 
   function emitMQTTMessage(type: string, payload: Record<string, unknown>) {
     if (!mqttClientRef.current || mqttStatus !== "connected") return;
@@ -420,14 +430,49 @@ export default function ChessPage() {
 
   function handleMQTTMessage(message: Record<string, unknown> & { type?: string; clientId?: string }) {
     if (message.clientId && message.clientId === clientIdRef.current) return;
-    if (!message.type) return;
+    if (!message.type) {
+      console.warn("MQTT message missing type:", message);
+      return;
+    }
+    console.log("Received MQTT message:", message.type, message);
+
+    // Handle presence tracking
+    if (message.type === "presence" && message.clientId) {
+      const action = message.action as string;
+      if (action === "connect") {
+        setOnlineClients((prev) => new Set([...prev, message.clientId as string]));
+      } else if (action === "disconnect") {
+        setOnlineClients((prev) => {
+          const next = new Set(prev);
+          next.delete(message.clientId as string);
+          return next;
+        });
+      }
+      return;
+    }
+
+    // Handle disconnect từ last will (khi client disconnect đột ngột)
+    if (message.type === "disconnect" && message.clientId) {
+      setOnlineClients((prev) => {
+        const next = new Set(prev);
+        next.delete(message.clientId as string);
+        return next;
+      });
+      return;
+    }
 
     const typedMessage = message as SocketPayload & { clientId?: string };
 
     if (typedMessage.type === "move" && "fen" in typedMessage) {
-      chessRef.current.load(typedMessage.fen);
-      refreshFromChess();
-      if (typedMessage.room) syncRoomState(typedMessage.room);
+      console.log("Processing move message:", typedMessage.fen);
+      try {
+        chessRef.current.load(typedMessage.fen);
+        refreshFromChess();
+        if (typedMessage.room) syncRoomState(typedMessage.room);
+        console.log("Move loaded successfully");
+      } catch (err) {
+        console.error("Error loading move from MQTT:", err, typedMessage);
+      }
     }
 
     if (typedMessage.type === "room" && "room" in typedMessage) {
@@ -591,6 +636,7 @@ export default function ChessPage() {
       });
       const data = await res.json();
       if (data?.room) syncRoomState(data.room);
+      console.log("Publishing move via MQTT:", { from, to, fen: payload.fen });
       emitMQTTMessage("move", {
         fen: payload.fen,
         move: { from, to },

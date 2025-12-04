@@ -62,7 +62,14 @@ export class MQTTClient {
 
       this.client.on("message", (topic, message) => {
         try {
+          // Extract type from topic: game/{roomId}/{type}
+          const topicParts = topic.split("/");
+          const messageType = topicParts[topicParts.length - 1];
+          
           const data = JSON.parse(message.toString()) as MQTTMessage & { clientId?: string };
+          // Add type from topic to message
+          data.type = messageType;
+          
           // Skip messages from self
           if (data.clientId && data.clientId === this.clientId) return;
           this.onMessage?.(data);

@@ -75,6 +75,7 @@ export default function XOPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedRoomId, setCopiedRoomId] = useState(false);
   const [mqttStatus, setMqttStatus] = useState<MQTTStatus>("closed");
+  const [onlineClients, setOnlineClients] = useState<Set<string>>(new Set());
   const [inviteUrl, setInviteUrl] = useState("");
   const [copiedInviteUrl, setCopiedInviteUrl] = useState(false);
 
@@ -88,7 +89,8 @@ export default function XOPage() {
   );
 
   const canPlay = Boolean(playerName && currentRoomId);
-  const isLocked = (roomState?.players?.length ?? 0) >= 2;
+  // Lock dựa trên số clients MQTT đang online, không phải players trong DB
+  const isLocked = onlineClients.size >= 2;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -156,6 +158,23 @@ export default function XOPage() {
       mqttClientRef.current = new MQTTClient(clientIdRef.current);
       mqttClientRef.current.setOnStatusChange((status) => {
         setMqttStatus(status);
+        // Khi connected, publish presence và thêm mình vào online clients
+        if (status === "connected" && mqttClientRef.current) {
+          setOnlineClients((prev) => new Set([...prev, clientIdRef.current]));
+          // Publish presence để các clients khác biết
+          mqttClientRef.current.publish("presence", {
+            playerName,
+            clientId: clientIdRef.current,
+            action: "connect",
+          });
+        } else if (status === "closed" || status === "error") {
+          // Remove self khi disconnect
+          setOnlineClients((prev) => {
+            const next = new Set(prev);
+            next.delete(clientIdRef.current);
+            return next;
+          });
+        }
       });
       mqttClientRef.current.setOnMessage((message) => {
         handleMQTTMessage(message);
@@ -166,10 +185,23 @@ export default function XOPage() {
 
     return () => {
       if (mqttClientRef.current) {
+        // Publish disconnect message trước khi disconnect (nếu đang connected)
+        if (mqttStatus === "connected") {
+          try {
+            mqttClientRef.current.publish("presence", {
+              playerName,
+              clientId: clientIdRef.current,
+              action: "disconnect",
+            });
+          } catch {
+            // ignore nếu không publish được
+          }
+        }
         mqttClientRef.current.disconnect();
       }
+      setOnlineClients(new Set());
     };
-  }, [currentRoomId, playerName]);
+  }, [currentRoomId, playerName, mqttStatus]);
 
   function emitMQTTMessage(type: string, payload: Record<string, unknown>) {
     if (!mqttClientRef.current || mqttStatus !== "connected") return;
@@ -179,6 +211,31 @@ export default function XOPage() {
   function handleMQTTMessage(message: Record<string, unknown> & { type?: string; clientId?: string }) {
     if (message.clientId && message.clientId === clientIdRef.current) return;
     if (!message.type) return;
+
+    // Handle presence tracking
+    if (message.type === "presence" && message.clientId) {
+      const action = message.action as string;
+      if (action === "connect") {
+        setOnlineClients((prev) => new Set([...prev, message.clientId as string]));
+      } else if (action === "disconnect") {
+        setOnlineClients((prev) => {
+          const next = new Set(prev);
+          next.delete(message.clientId as string);
+          return next;
+        });
+      }
+      return;
+    }
+
+    // Handle disconnect từ last will (khi client disconnect đột ngột)
+    if (message.type === "disconnect" && message.clientId) {
+      setOnlineClients((prev) => {
+        const next = new Set(prev);
+        next.delete(message.clientId as string);
+        return next;
+      });
+      return;
+    }
 
     const typedMessage = message as SocketPayload & { clientId?: string };
 
