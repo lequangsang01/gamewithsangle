@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
+import { MQTTClient, type MQTTStatus } from "@/lib/mqtt-client";
 
 type Color = "white" | "black";
 type PieceType = "p" | "r" | "n" | "b" | "q" | "k";
@@ -135,9 +136,9 @@ export default function ChessPage() {
   const [gameStatus, setGameStatus] = useState("Đang chờ tạo phòng...");
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedRoomId, setCopiedRoomId] = useState(false);
-  const [socketStatus, setSocketStatus] = useState<"connecting" | "connected" | "closed">("closed");
+  const [mqttStatus, setMqttStatus] = useState<MQTTStatus>("closed");
 
-  const socketRef = useRef<WebSocket | null>(null);
+  const mqttClientRef = useRef<MQTTClient | null>(null);
   const autoCreateRef = useRef(false);
   const clientIdRef = useRef(
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -266,7 +267,7 @@ export default function ChessPage() {
         setCurrentRoomId(data.roomId);
         setInputRoomId(data.roomId);
         hydrateFromRoom(data.room ?? null);
-        emitSocketMessage({ type: "room", room: data.room ?? null });
+        emitMQTTMessage("room", { room: data.room ?? null });
       } catch (err) {
         if (!options?.auto) {
           console.error(err);
@@ -305,24 +306,27 @@ export default function ChessPage() {
     handleJoinRoom(roomIdFromUrl.toUpperCase());
   }, []);
 
+  // MQTT connection
   useEffect(() => {
-    if (typeof window === "undefined" || !currentRoomId) return;
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(
-      `${protocol}://${window.location.host}/api/socket?roomId=${currentRoomId}&player=${encodeURIComponent(
-        playerName || "unknown"
-      )}`
-    );
-    socketRef.current = ws;
-    setSocketStatus("connecting");
-    ws.onopen = () => setSocketStatus("connected");
-    ws.onclose = () => setSocketStatus("closed");
-    ws.onerror = () => setSocketStatus("closed");
-    ws.onmessage = (event) => {
-      if (typeof event.data !== "string") return;
-      handleSocketMessage(event.data);
+    if (typeof window === "undefined" || !currentRoomId || !playerName) return;
+
+    if (!mqttClientRef.current) {
+      mqttClientRef.current = new MQTTClient(clientIdRef.current);
+      mqttClientRef.current.setOnStatusChange((status) => {
+        setMqttStatus(status);
+      });
+      mqttClientRef.current.setOnMessage((message) => {
+        handleMQTTMessage(message);
+      });
+    }
+
+    mqttClientRef.current.connect(currentRoomId, playerName);
+
+    return () => {
+      if (mqttClientRef.current) {
+        mqttClientRef.current.disconnect();
+      }
     };
-    return () => ws.close();
   }, [currentRoomId, playerName]);
 
   // Polling fallback: nếu socket lỗi, vẫn đồng bộ trạng thái phòng / nước đi
@@ -409,33 +413,29 @@ export default function ChessPage() {
     };
   }, [currentRoomId]);
 
-  function emitSocketMessage(payload: SocketPayload) {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
-    socketRef.current.send(
-      JSON.stringify({ ...payload, clientId: clientIdRef.current })
-    );
+  function emitMQTTMessage(type: string, payload: Record<string, unknown>) {
+    if (!mqttClientRef.current || mqttStatus !== "connected") return;
+    mqttClientRef.current.publish(type, payload);
   }
 
-  function handleSocketMessage(raw: string) {
-    try {
-      const message = JSON.parse(raw) as SocketPayload & { clientId?: string };
-      if (message.clientId && message.clientId === clientIdRef.current) return;
+  function handleMQTTMessage(message: Record<string, unknown> & { type?: string; clientId?: string }) {
+    if (message.clientId && message.clientId === clientIdRef.current) return;
+    if (!message.type) return;
 
-      if (message.type === "move" && "fen" in message) {
-        chessRef.current.load(message.fen);
-        refreshFromChess();
-        if (message.room) syncRoomState(message.room);
-      }
+    const typedMessage = message as SocketPayload & { clientId?: string };
 
-      if (message.type === "room" && "room" in message) {
-        syncRoomState(message.room ?? null);
-      }
+    if (typedMessage.type === "move" && "fen" in typedMessage) {
+      chessRef.current.load(typedMessage.fen);
+      refreshFromChess();
+      if (typedMessage.room) syncRoomState(typedMessage.room);
+    }
 
-      if (message.type === "reset" && "room" in message) {
-        hydrateFromRoom(message.room ?? null);
-      }
-    } catch {
-      // ignore malformed payloads
+    if (typedMessage.type === "room" && "room" in typedMessage) {
+      syncRoomState(typedMessage.room ?? null);
+    }
+
+    if (typedMessage.type === "reset" && "room" in typedMessage) {
+      hydrateFromRoom(typedMessage.room ?? null);
     }
   }
 
@@ -499,7 +499,7 @@ export default function ChessPage() {
       setCurrentRoomId(data.roomId);
       setInputRoomId(data.roomId);
       hydrateFromRoom(data.room ?? null);
-      emitSocketMessage({ type: "room", room: data.room ?? null });
+      emitMQTTMessage("room", { room: data.room ?? null });
     } catch (err: any) {
       alert(err?.message || "Không vào được phòng, thử lại sau.");
     } finally {
@@ -591,8 +591,7 @@ export default function ChessPage() {
       });
       const data = await res.json();
       if (data?.room) syncRoomState(data.room);
-      emitSocketMessage({
-        type: "move",
+      emitMQTTMessage("move", {
         fen: payload.fen,
         move: { from, to },
         turn: payload.turn as Color,
@@ -625,7 +624,7 @@ export default function ChessPage() {
       });
       const data = await res.json();
       hydrateFromRoom(data?.room ?? null);
-      emitSocketMessage({ type: "reset", room: data?.room ?? null });
+      emitMQTTMessage("reset", { room: data?.room ?? null });
     } catch {
       chessRef.current.reset();
       refreshFromChess();
@@ -791,9 +790,9 @@ export default function ChessPage() {
               </div>
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-3">
-                  <span className={socketStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
-                    Socket: {socketStatus}
-                  </span>
+                <span className={mqttStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
+                  MQTT: {mqttStatus}
+                </span>
                   <span>
                     Lượt đi:{" "}
                     <span className={turn === "white" ? "text-zinc-100" : "text-zinc-400"}>

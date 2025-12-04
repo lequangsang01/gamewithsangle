@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MQTTClient, type MQTTStatus } from "@/lib/mqtt-client";
 
 type Symbol = "X" | "O";
 
@@ -73,11 +74,11 @@ export default function XOPage() {
   const [gameStatus, setGameStatus] = useState("Đang chờ tạo phòng...");
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedRoomId, setCopiedRoomId] = useState(false);
-  const [socketStatus, setSocketStatus] = useState<"connecting" | "connected" | "closed">("closed");
+  const [mqttStatus, setMqttStatus] = useState<MQTTStatus>("closed");
   const [inviteUrl, setInviteUrl] = useState("");
   const [copiedInviteUrl, setCopiedInviteUrl] = useState(false);
 
-  const socketRef = useRef<WebSocket | null>(null);
+  const mqttClientRef = useRef<MQTTClient | null>(null);
   const autoCreateRef = useRef(false);
   const autoJoinRef = useRef(false);
   const clientIdRef = useRef(
@@ -125,7 +126,7 @@ export default function XOPage() {
         setCurrentRoomId(data.roomId);
         setInputRoomId(data.roomId);
         hydrateFromRoom(data.room ?? null);
-        emitSocketMessage({ type: "room", room: data.room ?? null });
+        emitMQTTMessage("room", { room: data.room ?? null });
       } catch (err) {
         if (!options?.auto) {
           console.error(err);
@@ -147,49 +148,50 @@ export default function XOPage() {
     handleCreateRoom({ auto: true });
   }, [storedNameLoaded, handleCreateRoom]);
 
+  // MQTT connection
   useEffect(() => {
-    if (typeof window === "undefined" || !currentRoomId) return;
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(
-      `${protocol}://${window.location.host}/api/socket?roomId=${currentRoomId}&player=${encodeURIComponent(
-        playerName || "unknown"
-      )}`
-    );
-    socketRef.current = ws;
-    setSocketStatus("connecting");
-    ws.onopen = () => setSocketStatus("connected");
-    ws.onclose = () => setSocketStatus("closed");
-    ws.onerror = () => setSocketStatus("closed");
-    ws.onmessage = (event) => {
-      if (typeof event.data !== "string") return;
-      handleSocketMessage(event.data);
+    if (typeof window === "undefined" || !currentRoomId || !playerName) return;
+
+    if (!mqttClientRef.current) {
+      mqttClientRef.current = new MQTTClient(clientIdRef.current);
+      mqttClientRef.current.setOnStatusChange((status) => {
+        setMqttStatus(status);
+      });
+      mqttClientRef.current.setOnMessage((message) => {
+        handleMQTTMessage(message);
+      });
+    }
+
+    mqttClientRef.current.connect(currentRoomId, playerName);
+
+    return () => {
+      if (mqttClientRef.current) {
+        mqttClientRef.current.disconnect();
+      }
     };
-    return () => ws.close();
   }, [currentRoomId, playerName]);
 
-  function emitSocketMessage(payload: Omit<SocketPayload, "clientId">) {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
-    socketRef.current.send(JSON.stringify({ ...payload, clientId: clientIdRef.current }));
+  function emitMQTTMessage(type: string, payload: Record<string, unknown>) {
+    if (!mqttClientRef.current || mqttStatus !== "connected") return;
+    mqttClientRef.current.publish(type, payload);
   }
 
-  function handleSocketMessage(raw: string) {
-    try {
-      const message = JSON.parse(raw) as SocketPayload & { clientId?: string };
-      if (message.clientId && message.clientId === clientIdRef.current) return;
+  function handleMQTTMessage(message: Record<string, unknown> & { type?: string; clientId?: string }) {
+    if (message.clientId && message.clientId === clientIdRef.current) return;
+    if (!message.type) return;
 
-      if (message.type === "move" && "row" in message) {
-        if (message.room) syncRoomState(message.room);
-      }
+    const typedMessage = message as SocketPayload & { clientId?: string };
 
-      if (message.type === "room" && "room" in message) {
-        syncRoomState(message.room ?? null);
-      }
+    if (typedMessage.type === "move" && "row" in typedMessage) {
+      if (typedMessage.room) syncRoomState(typedMessage.room);
+    }
 
-      if (message.type === "reset" && "room" in message) {
-        hydrateFromRoom(message.room ?? null);
-      }
-    } catch {
-      // ignore malformed payloads
+    if (typedMessage.type === "room" && "room" in typedMessage) {
+      syncRoomState(typedMessage.room ?? null);
+    }
+
+    if (typedMessage.type === "reset" && "room" in typedMessage) {
+      hydrateFromRoom(typedMessage.room ?? null);
     }
   }
 
@@ -263,7 +265,7 @@ export default function XOPage() {
       const data: { roomId: string; room?: RoomState | null } = await res.json();
       setCurrentRoomId(data.roomId);
       hydrateFromRoom(data.room ?? null);
-      emitSocketMessage({ type: "room", room: data.room ?? null });
+      emitMQTTMessage("room", { room: data.room ?? null });
     } catch (err: any) {
       alert(err?.message || "Không vào được phòng, thử lại sau.");
     } finally {
@@ -312,13 +314,12 @@ export default function XOPage() {
       const data = await res.json();
       if (data?.room) {
         syncRoomState(data.room);
-        emitSocketMessage({
-          type: "move",
+        emitMQTTMessage("move", {
           row,
           col,
           room: data.room,
           playerName,
-        } as Omit<SocketPayload, "clientId">);
+        });
       }
     } catch (err: any) {
       alert(err?.message || "Không thể thực hiện nước đi");
@@ -347,7 +348,7 @@ export default function XOPage() {
       });
       const data = await res.json();
       hydrateFromRoom(data?.room ?? null);
-      emitSocketMessage({ type: "reset", room: data?.room ?? null });
+      emitMQTTMessage("reset", { room: data?.room ?? null });
     } catch {
       setBoard(INITIAL_BOARD.map((row) => [...row]));
       setTurn("X");
@@ -492,8 +493,8 @@ export default function XOPage() {
               )}
             </div>
             <div className="flex items-center gap-4">
-              <span className={socketStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
-                Socket: {socketStatus}
+              <span className={mqttStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
+                MQTT: {mqttStatus}
               </span>
               <span>
                 Lượt đi: <span className="text-emerald-400 font-semibold">{turn}</span>
