@@ -16,9 +16,17 @@ export async function GET() {
   const db = client.db(DB_NAME);
   const col = db.collection<ChessRoom>(COLLECTION);
 
-  // Lấy các phòng có ít nhất 1 người chơi, sắp xếp theo thời gian cập nhật gần nhất
+  // Chỉ lấy các phòng còn "online": có ít nhất 1 người chơi
+  // và được cập nhật trong vòng N phút gần đây (proxy cho còn người đang online).
+  // Ở đây tạm chọn 5 phút, bạn có thể chỉnh nếu muốn.
+  const now = new Date();
+  const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+
   const rooms = await col
-    .find({ players: { $exists: true, $not: { $size: 0 } } })
+    .find({
+      players: { $exists: true, $not: { $size: 0 } },
+      updatedAt: { $gte: fiveMinutesAgo },
+    })
     .sort({ updatedAt: -1 })
     .limit(50)
     .project<Pick<ChessRoom, "roomId" | "players" | "updatedAt">>({
