@@ -8,6 +8,13 @@ const games = [
     href: "/chess",
     status: "available" as const,
   },
+  {
+    id: "xo",
+    name: "Tic-Tac-Toe (XO)",
+    description: "Chơi XO online 1vs1, tạo phòng hoặc nhập mã phòng để vào chơi.",
+    href: "/xo",
+    status: "available" as const,
+  },
 ];
 
 export default function Home() {
