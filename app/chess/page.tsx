@@ -251,6 +251,14 @@ export default function ChessPage() {
     window.localStorage.setItem("gws_player_name", playerName);
   }, [playerName, storedNameLoaded]);
 
+  // Khi MQTT đã connected và có roomState, broadcast room info
+  // để các client khác (đối thủ) cập nhật danh sách người chơi ngay lập tức
+  useEffect(() => {
+    if (!currentRoomId || !roomState) return;
+    if (mqttStatus !== "connected") return;
+    emitMQTTMessage("room", { room: roomState });
+  }, [currentRoomId, roomState, mqttStatus]);
+
   const handleCreateRoom = useCallback(
     async (options?: { auto?: boolean }) => {
       if (!playerName) {
