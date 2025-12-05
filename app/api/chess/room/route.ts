@@ -139,7 +139,14 @@ export async function POST(req: Request) {
           return existingRoom.roundIndex % 2 === 0 ? "white" : "black";
         } else if (players.length === 1) {
           const firstPlayer = players[0] as ChessPlayer;
-          return firstPlayer.color === "white" ? "black" : "white";
+          // Kiểm tra rõ ràng màu của người chơi đầu tiên
+          if (firstPlayer.color === "white") {
+            return "black";
+          } else if (firstPlayer.color === "black") {
+            return "white";
+          }
+          // Nếu người đầu tiên chưa có màu, gán dựa trên roundIndex
+          return existingRoom.roundIndex % 2 === 0 ? "black" : "white";
         }
         return undefined;
       };

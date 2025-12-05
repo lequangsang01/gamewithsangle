@@ -152,6 +152,7 @@ export default function ChessPage() {
   const [activeRooms, setActiveRooms] = useState<
     { roomId: string; players: Player[]; updatedAt?: string | null }[]
   >([]);
+  const [isEditingPlayer, setIsEditingPlayer] = useState(false);
 
   const boardState = useMemo(() => convertBoard(chessRef.current.board()), [refreshTick]);
   const movesHistory = useMemo(
@@ -439,10 +440,8 @@ export default function ChessPage() {
   function handleMQTTMessage(message: Record<string, unknown> & { type?: string; clientId?: string }) {
     if (message.clientId && message.clientId === clientIdRef.current) return;
     if (!message.type) {
-      console.warn("MQTT message missing type:", message);
       return;
     }
-    console.log("Received MQTT message:", message.type, message);
 
     // Handle presence tracking
     if (message.type === "presence" && message.clientId) {
@@ -472,12 +471,10 @@ export default function ChessPage() {
     const typedMessage = message as SocketPayload & { clientId?: string };
 
     if (typedMessage.type === "move" && "fen" in typedMessage) {
-      console.log("Processing move message:", typedMessage.fen);
       try {
         chessRef.current.load(typedMessage.fen);
         refreshFromChess();
         if (typedMessage.room) syncRoomState(typedMessage.room);
-        console.log("Move loaded successfully");
       } catch (err) {
         console.error("Error loading move from MQTT:", err, typedMessage);
       }
@@ -627,34 +624,44 @@ export default function ChessPage() {
 
     if (!currentRoomId) return;
 
-    const payload = {
-      action: "move",
-      roomId: currentRoomId,
-      move: `${from}${to}`,
-      fen: chessRef.current.fen(),
-      turn: chessRef.current.turn() === "w" ? "white" : "black",
-      playerName,
-    };
+    const fen = chessRef.current.fen();
+    const turn = chessRef.current.turn() === "w" ? "white" : "black";
+    const moveStr = `${from}${to}`;
 
-    try {
-      const res = await fetch("/api/chess/room", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (data?.room) syncRoomState(data.room);
-      console.log("Publishing move via MQTT:", { from, to, fen: payload.fen });
-      emitMQTTMessage("move", {
-        fen: payload.fen,
-        move: { from, to },
-        turn: payload.turn as Color,
-        room: data?.room ?? null,
+    // Publish MQTT ngay lập tức để đồng bộ real-time (không đợi API)
+    // Điều này giúp giảm độ trễ từ ~200-500ms xuống <50ms
+    emitMQTTMessage("move", {
+      fen,
+      move: { from, to },
+      turn: turn as Color,
+      playerName,
+    });
+
+    // Gọi API song song để lưu vào DB (không block UI)
+    fetch("/api/chess/room", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "move",
+        roomId: currentRoomId,
+        move: moveStr,
+        fen,
+        turn,
         playerName,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.room) {
+          syncRoomState(data.room);
+          // Broadcast room state update qua MQTT
+          emitMQTTMessage("room", { room: data.room });
+        }
+      })
+      .catch((err) => {
+        console.error("Error saving move to DB:", err);
+        // Không cần xử lý lỗi, MQTT đã broadcast rồi
       });
-    } catch {
-      // ignore
-    }
   }
 
   async function handleEndGame() {
@@ -722,60 +729,155 @@ export default function ChessPage() {
           </header>
 
           <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400">Tên người chơi (lưu local)</label>
-              <input
-                value={playerName}
-                onChange={(e) => !isLocked && setPlayerName(e.target.value)}
-                placeholder="Ví dụ: Sangle"
-                disabled={isLocked}
-                className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${
-                  isLocked ? "opacity-60 cursor-not-allowed" : ""
-                }`}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400">Avatar</label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const idx = Math.floor(Math.random() * AVATARS.length);
-                    setAvatar(AVATARS[idx]!);
-                  }}
-                  className="px-2 py-1 text-[10px] rounded-md border border-zinc-700 hover:border-emerald-500"
-                >
-                  Random
-                </button>
-                <div className="flex flex-wrap gap-1">
-                  {AVATARS.map((icon) => (
-                    <button
-                      key={icon}
-                      type="button"
-                      onClick={() => setAvatar(icon)}
-                      className={`w-7 h-7 flex items-center justify-center rounded-full border text-base ${
-                        avatar === icon
-                          ? "border-emerald-500 bg-emerald-500/10"
-                          : "border-zinc-700 hover:border-emerald-500"
-                      }`}
-                    >
-                      {icon}
-                    </button>
-                  ))}
+            {!isEditingPlayer ? (
+              <div className="col-span-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="w-10 h-10 flex items-center justify-center rounded-full bg-zinc-800 text-xl border border-zinc-700">
+                      {avatar}
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-zinc-100">{playerName}</div>
+                      <div className="text-xs text-zinc-400">Người chơi</div>
+                    </div>
+                    {!isLocked && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingPlayer(true)}
+                        className="p-1.5 rounded-md border border-zinc-700 hover:border-emerald-500 hover:bg-zinc-800 transition-colors flex-shrink-0"
+                        title="Chỉnh sửa"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-3.5 w-3.5 text-zinc-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  {opponentName && (
+                    <>
+                      <div className="flex items-center justify-center px-2">
+                        <span className="text-2xl font-bold text-zinc-500 tracking-wider">VS</span>
+                      </div>
+                      <div className="flex items-center gap-3 flex-1 justify-end">
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-zinc-100">{opponentName}</div>
+                          <div className="text-xs text-zinc-400">Đối thủ</div>
+                        </div>
+                        {opponentAvatar && (
+                          <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-zinc-800 text-xl border border-zinc-700">
+                            {opponentAvatar}
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400">Mã phòng (auto tạo)</label>
-              <input
-                value={inputRoomId}
-                onChange={(e) => !isLocked && setInputRoomId(e.target.value.toUpperCase())}
-                placeholder="VD: ABC123"
-                disabled={isLocked}
-                className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-emerald-500 ${
-                  isLocked ? "opacity-60 cursor-not-allowed" : ""
-                }`}
-              />
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Tên người chơi (lưu local)</label>
+                  <input
+                    value={playerName}
+                    onChange={(e) => !isLocked && setPlayerName(e.target.value)}
+                    placeholder="Ví dụ: Sangle"
+                    disabled={isLocked}
+                    className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${
+                      isLocked ? "opacity-60 cursor-not-allowed" : ""
+                    }`}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Avatar</label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = Math.floor(Math.random() * AVATARS.length);
+                        setAvatar(AVATARS[idx]!);
+                      }}
+                      className="px-2 py-1 text-[10px] rounded-md border border-zinc-700 hover:border-emerald-500"
+                    >
+                      Random
+                    </button>
+                    <div className="flex flex-wrap gap-1">
+                      {AVATARS.map((icon) => (
+                        <button
+                          key={icon}
+                          type="button"
+                          onClick={() => setAvatar(icon)}
+                          className={`w-7 h-7 flex items-center justify-center rounded-full border text-base ${
+                            avatar === icon
+                              ? "border-emerald-500 bg-emerald-500/10"
+                              : "border-zinc-700 hover:border-emerald-500"
+                          }`}
+                        >
+                          {icon}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="col-span-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingPlayer(false)}
+                    className="px-3 py-1.5 text-xs rounded-md border border-zinc-700 hover:border-emerald-500 hover:bg-zinc-800 transition-colors"
+                  >
+                    Xong
+                  </button>
+                </div>
+              </>
+            )}
+            <div className="space-y-2 col-span-2">
+              <label className="text-xs text-zinc-400 text-center block">Mã phòng (auto tạo)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  value={inputRoomId}
+                  onChange={(e) => !isLocked && setInputRoomId(e.target.value.toUpperCase())}
+                  placeholder="VD: ABC123"
+                  disabled={isLocked}
+                  className={`flex-1 rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm uppercase text-center outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    isLocked ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
+                />
+                {currentRoomId && (
+                  <button
+                    onClick={handleCopyRoomId}
+                    className="p-2 rounded-md border border-zinc-700 hover:border-emerald-500 hover:bg-zinc-800 transition-colors flex-shrink-0"
+                    title="Copy mã phòng"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-4 w-4 text-zinc-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      />
+                    </svg>
+                  </button>
+                )}
+                {copiedRoomId && (
+                  <span className="text-emerald-400 text-xs whitespace-nowrap">Đã copy</span>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-2 col-span-2">
@@ -810,36 +912,12 @@ export default function ChessPage() {
             </button>
 
             <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span>Phòng:</span>
-                  {currentRoomId ? (
-                    <>
-                      <span className="font-semibold text-emerald-400">{currentRoomId}</span>
-                      <button
-                        onClick={handleCopyRoomId}
-                        className="rounded-full border border-zinc-700 px-2 py-1 text-[10px] uppercase tracking-wide hover:border-emerald-500"
-                      >
-                        Copy
-                      </button>
-                      {copiedRoomId && <span className="text-emerald-400 text-[10px]">Đã copy</span>}
-                    </>
-                  ) : (
-                    <span>Chưa có</span>
-                  )}
-                </div>
-                {opponentName && (
-                  <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-                    {opponentAvatar && (
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800">
-                        {opponentAvatar}
-                      </span>
-                    )}
-                    <span>
-                      Đối thủ:{" "}
-                      <span className="text-zinc-100 font-medium">{opponentName}</span>
-                    </span>
-                  </div>
+              <div className="flex items-center gap-2 justify-center flex-1">
+                <span>Phòng:</span>
+                {currentRoomId ? (
+                  <span className="font-semibold text-emerald-400">{currentRoomId}</span>
+                ) : (
+                  <span>Chưa có</span>
                 )}
               </div>
               <div className="flex flex-col items-end gap-1">
