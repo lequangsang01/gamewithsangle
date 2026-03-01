@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { MQTTClient, type MQTTStatus } from "@/lib/mqtt-client";
+import { getBotMove } from "@/lib/chess-bot";
 
 type Color = "white" | "black";
 type PieceType = "p" | "r" | "n" | "b" | "q" | "k";
@@ -117,6 +118,9 @@ export default function ChessPage() {
   const chessRef = useRef(new Chess());
   const [refreshTick, setRefreshTick] = useState(0);
 
+  const [gameMode, setGameMode] = useState<"online" | "bot">("online");
+  const [isBotThinking, setIsBotThinking] = useState(false);
+
   const [playerName, setPlayerName] = useState(() => generateRandomName());
   const [storedNameLoaded, setStoredNameLoaded] = useState(false);
   const [avatar, setAvatar] = useState<string>(() => {
@@ -194,25 +198,44 @@ export default function ChessPage() {
     return null;
   }, [refreshTick]);
 
-  const canPlay = Boolean(playerName && currentRoomId);
+  const canPlay = gameMode === "bot" ? true : Boolean(playerName && currentRoomId);
   // Lock dựa trên số clients MQTT đang online, không phải players trong DB
-  const isLocked = onlineClients.size >= 2;
+  const isLocked = gameMode === "bot" ? false : onlineClients.size >= 2;
 
   const opponentName = useMemo(() => {
+    if (gameMode === "bot") return "Sangle Bot 🤖";
     if (!roomState?.players?.length) return null;
     const others = roomState.players.filter(
       (p) => normalize(p.name) !== normalize(playerName)
     );
     return others[0]?.name ?? null;
-  }, [roomState, playerName]);
+  }, [roomState, playerName, gameMode]);
 
   const opponentAvatar = useMemo(() => {
+    if (gameMode === "bot") return "🤖";
     if (!roomState?.players?.length) return null;
     const others = roomState.players.filter(
       (p) => normalize(p.name) !== normalize(playerName)
     );
     return others[0]?.avatar ?? null;
-  }, [roomState, playerName]);
+  }, [roomState, playerName, gameMode]);
+
+  // Handle Bot Turn
+  useEffect(() => {
+    if (gameMode !== "bot" || isBotThinking) return;
+    const botColor = playerColor === "white" ? "b" : "w";
+    if (chessRef.current.turn() === botColor && !chessRef.current.isGameOver()) {
+      setIsBotThinking(true);
+      setTimeout(() => {
+        const move = getBotMove(chessRef.current);
+        if (move) {
+          chessRef.current.move(move);
+          refreshFromChess();
+        }
+        setIsBotThinking(false);
+      }, 500); // Thêm độ trễ để tự nhiên hơn
+    }
+  }, [turn, gameMode, isBotThinking, playerColor, refreshTick]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -631,6 +654,10 @@ export default function ChessPage() {
     setLegalTargets(new Set());
     refreshFromChess();
 
+    if (gameMode === "bot") {
+      return;
+    }
+
     if (!currentRoomId) return;
 
     const payload = {
@@ -664,6 +691,19 @@ export default function ChessPage() {
   }
 
   async function handleEndGame() {
+    if (gameMode === "bot") {
+      const confirmReset = window.confirm("Bắt đầu ván mới với Bot, bạn muốn đổi màu không?");
+      if (!confirmReset) return;
+      chessRef.current.reset();
+      setPlayerColor((prev) => {
+        const next = prev === "white" ? "black" : "white";
+        setOrientation(next);
+        return next;
+      });
+      refreshFromChess("Đã làm mới bàn cờ.");
+      return;
+    }
+
     if (!currentRoomId) {
       chessRef.current.reset();
       refreshFromChess("Đã làm mới bàn cờ.");
@@ -719,145 +759,209 @@ export default function ChessPage() {
     <div className="min-h-screen bg-zinc-950 text-zinc-50 flex items-center justify-center px-4">
       <main className="w-full max-w-6xl py-10 flex flex-col gap-8 md:flex-row">
         <section className="w-full md:w-2/3 space-y-4">
-          <header className="mb-2">
-            <h1 className="text-2xl font-bold tracking-tight mb-1">Cờ vua realtime (beta)</h1>
-            <p className="text-xs text-zinc-400">
-              Trang tự sinh tên và mã phòng. Chia sẻ mã cho bạn bè để chơi 1vs1, nước đi sẽ được
-              đồng bộ qua MongoDB + WebSocket. Luật sử dụng chess.js nên đảm bảo quốc tế.
+          <header className="mb-4">
+            <h1 className="text-2xl font-bold tracking-tight mb-2">Cờ vua</h1>
+            <p className="text-xs text-zinc-400 mb-4">
+              Chơi cờ vua online cùng bạn bè hoặc đánh với Bot. Trải nghiệm tức thì, chuẩn quốc tế.
             </p>
+
+            <div className="flex gap-2 p-1 bg-zinc-900/60 border border-zinc-800 rounded-lg w-fit">
+              <button
+                onClick={() => {
+                  setGameMode("online");
+                  chessRef.current.reset();
+                  setPlayerColor("white");
+                  setOrientation("white");
+                  refreshFromChess();
+                }}
+                className={`px-4 py-1.5 text-sm rounded-md transition-all ${gameMode === "online" ? "bg-emerald-500 text-emerald-950 font-semibold shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+              >
+                Chơi Online
+              </button>
+              <button
+                onClick={() => {
+                  setGameMode("bot");
+                  chessRef.current.reset();
+                  setPlayerColor("white");
+                  setOrientation("white");
+                  refreshFromChess("Bắt đầu ván mới với Bot.");
+                }}
+                className={`px-4 py-1.5 text-sm rounded-md transition-all ${gameMode === "bot" ? "bg-emerald-500 text-emerald-950 font-semibold shadow-sm" : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+              >
+                Chơi với Máy
+              </button>
+            </div>
           </header>
 
-          <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400">Tên người chơi (lưu local)</label>
-              <input
-                value={playerName}
-                onChange={(e) => !isLocked && setPlayerName(e.target.value)}
-                placeholder="Ví dụ: Sangle"
-                disabled={isLocked}
-                className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${isLocked ? "opacity-60 cursor-not-allowed" : ""
-                  }`}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400">Avatar</label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const idx = Math.floor(Math.random() * AVATARS.length);
-                    setAvatar(AVATARS[idx]!);
-                  }}
-                  className="px-2 py-1 text-[10px] rounded-md border border-zinc-700 hover:border-emerald-500"
-                >
-                  Random
-                </button>
-                <div className="flex flex-wrap gap-1">
-                  {AVATARS.map((icon) => (
+          {gameMode === "online" && (
+            <>
+              <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Tên người chơi (lưu local)</label>
+                  <input
+                    value={playerName}
+                    onChange={(e) => !isLocked && setPlayerName(e.target.value)}
+                    placeholder="Ví dụ: Sangle"
+                    disabled={isLocked}
+                    className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${isLocked ? "opacity-60 cursor-not-allowed" : ""
+                      }`}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Avatar</label>
+                  <div className="flex items-center gap-2">
                     <button
-                      key={icon}
                       type="button"
-                      onClick={() => setAvatar(icon)}
-                      className={`w-7 h-7 flex items-center justify-center rounded-full border text-base ${avatar === icon
-                        ? "border-emerald-500 bg-emerald-500/10"
-                        : "border-zinc-700 hover:border-emerald-500"
-                        }`}
+                      onClick={() => {
+                        const idx = Math.floor(Math.random() * AVATARS.length);
+                        setAvatar(AVATARS[idx]!);
+                      }}
+                      className="px-2 py-1 text-[10px] rounded-md border border-zinc-700 hover:border-emerald-500"
                     >
-                      {icon}
+                      Random
                     </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs text-zinc-400">Mã phòng (auto tạo)</label>
-              <input
-                value={inputRoomId}
-                onChange={(e) => !isLocked && setInputRoomId(e.target.value.toUpperCase())}
-                placeholder="VD: ABC123"
-                disabled={isLocked}
-                className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-emerald-500 ${isLocked ? "opacity-60 cursor-not-allowed" : ""
-                  }`}
-              />
-            </div>
-
-            <div className="flex gap-2 col-span-2">
-              <button
-                onClick={() => handleCreateRoom()}
-                disabled={isSyncing}
-                className={`flex-1 rounded-md text-sm font-medium py-2 transition-colors ${isSyncing ? "bg-emerald-900 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400"
-                  }`}
-              >
-                Tạo phòng mới
-              </button>
-              <button
-                onClick={() => handleJoinRoom()}
-                disabled={isSyncing}
-                className={`flex-1 rounded-md border border-zinc-700 text-sm font-medium py-2 transition-colors ${isSyncing ? "text-zinc-500 cursor-not-allowed" : "hover:bg-zinc-800"
-                  }`}
-              >
-                Vào phòng bằng mã
-              </button>
-            </div>
-
-            <button
-              onClick={handleEndGame}
-              disabled={isSyncing}
-              className={`col-span-2 rounded-md text-sm font-medium py-2 border transition-colors ${isSyncing ? "border-zinc-800 text-zinc-500 cursor-wait" : "border-red-500 text-red-400 hover:bg-red-500/10"
-                }`}
-            >
-              Kết thúc ván / đổi màu
-            </button>
-
-            <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span>Phòng:</span>
-                  {currentRoomId ? (
-                    <>
-                      <span className="font-semibold text-emerald-400">{currentRoomId}</span>
-                      <button
-                        onClick={handleCopyRoomId}
-                        className="rounded-full border border-zinc-700 px-2 py-1 text-[10px] uppercase tracking-wide hover:border-emerald-500"
-                      >
-                        Copy
-                      </button>
-                      {copiedRoomId && <span className="text-emerald-400 text-[10px]">Đã copy</span>}
-                    </>
-                  ) : (
-                    <span>Chưa có</span>
-                  )}
-                </div>
-                {opponentName && (
-                  <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-1">
-                    {opponentAvatar && (
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700">
-                        {opponentAvatar}
-                      </span>
-                    )}
-                    <span>
-                      Đối thủ:{" "}
-                      <span className="text-zinc-100 font-medium">{opponentName}</span>
-                    </span>
-                    <div className="flex items-center gap-1 ml-2">
-                      <div className={`w-1.5 h-1.5 rounded-full ${onlineClients.size >= 2 ? 'bg-emerald-500' : 'bg-red-500/80'}`} />
-                      <span className="text-[10px] text-zinc-500">{onlineClients.size >= 2 ? 'Online' : 'Offline'}</span>
+                    <div className="flex flex-wrap gap-1">
+                      {AVATARS.map((icon) => (
+                        <button
+                          key={icon}
+                          type="button"
+                          onClick={() => setAvatar(icon)}
+                          className={`w-7 h-7 flex items-center justify-center rounded-full border text-base ${avatar === icon
+                            ? "border-emerald-500 bg-emerald-500/10"
+                            : "border-zinc-700 hover:border-emerald-500"
+                            }`}
+                        >
+                          {icon}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                )}
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <div className="flex items-center gap-3">
-                  <span className={mqttStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
-                    MQTT: {mqttStatus}
-                  </span>
-                  <span>
-                    Lượt đi:{" "}
-                    <span className={turn === "white" ? "text-zinc-100" : "text-zinc-400"}>
-                      {turn === "white" ? "Trắng" : "Đen"}
-                    </span>
-                  </span>
                 </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Mã phòng (auto tạo)</label>
+                  <input
+                    value={inputRoomId}
+                    onChange={(e) => !isLocked && setInputRoomId(e.target.value.toUpperCase())}
+                    placeholder="VD: ABC123"
+                    disabled={isLocked}
+                    className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-emerald-500 ${isLocked ? "opacity-60 cursor-not-allowed" : ""
+                      }`}
+                  />
+                </div>
+
+                <div className="flex gap-2 col-span-2">
+                  <button
+                    onClick={() => handleCreateRoom()}
+                    disabled={isSyncing}
+                    className={`flex-1 rounded-md text-sm font-medium py-2 transition-colors ${isSyncing ? "bg-emerald-900 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400"
+                      }`}
+                  >
+                    Tạo phòng mới
+                  </button>
+                  <button
+                    onClick={() => handleJoinRoom()}
+                    disabled={isSyncing}
+                    className={`flex-1 rounded-md border border-zinc-700 text-sm font-medium py-2 transition-colors ${isSyncing ? "text-zinc-500 cursor-not-allowed" : "hover:bg-zinc-800"
+                      }`}
+                  >
+                    Vào phòng bằng mã
+                  </button>
+                </div>
+
+                <button
+                  onClick={handleEndGame}
+                  disabled={isSyncing}
+                  className={`col-span-2 rounded-md text-sm font-medium py-2 border transition-colors ${isSyncing ? "border-zinc-800 text-zinc-500 cursor-wait" : "border-red-500 text-red-400 hover:bg-red-500/10"
+                    }`}
+                >
+                  Kết thúc ván / đổi màu
+                </button>
+
+                <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span>Phòng:</span>
+                      {currentRoomId ? (
+                        <>
+                          <span className="font-semibold text-emerald-400">{currentRoomId}</span>
+                          <button
+                            onClick={handleCopyRoomId}
+                            className="rounded-full border border-zinc-700 px-2 py-1 text-[10px] uppercase tracking-wide hover:border-emerald-500"
+                          >
+                            Copy
+                          </button>
+                          {copiedRoomId && <span className="text-emerald-400 text-[10px]">Đã copy</span>}
+                        </>
+                      ) : (
+                        <span>Chưa có</span>
+                      )}
+                    </div>
+                    {opponentName && (
+                      <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-1">
+                        {opponentAvatar && (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700">
+                            {opponentAvatar}
+                          </span>
+                        )}
+                        <span>
+                          Đối thủ:{" "}
+                          <span className="text-zinc-100 font-medium">{opponentName}</span>
+                        </span>
+                        <div className="flex items-center gap-1 ml-2">
+                          <div className={`w-1.5 h-1.5 rounded-full ${onlineClients.size >= 2 ? 'bg-emerald-500' : 'bg-red-500/80'}`} />
+                          <span className="text-[10px] text-zinc-500">{onlineClients.size >= 2 ? 'Online' : 'Offline'}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-3">
+                      <span className={mqttStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
+                        MQTT: {mqttStatus}
+                      </span>
+                      <span>
+                        Lượt đi:{" "}
+                        <span className={turn === "white" ? "text-zinc-100" : "text-zinc-400"}>
+                          {turn === "white" ? "Trắng" : "Đen"}
+                        </span>
+                      </span>
+                    </div>
+                    <span>
+                      Bạn cầm:{" "}
+                      <span className="text-emerald-400 font-semibold">
+                        {playerColor === "white" ? "Trắng" : "Đen"}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {gameMode === "bot" && (
+            <div className="flex flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-zinc-800 border border-zinc-700">🤖</span>
+                  Sangle Bot
+                </span>
+                <button
+                  onClick={handleEndGame}
+                  disabled={isBotThinking}
+                  className="px-4 py-1.5 rounded-md text-xs border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                >
+                  Ván mới / Đổi màu
+                </button>
+              </div>
+              <div className="flex items-center justify-between text-xs text-zinc-400">
+                <span>
+                  Lượt đi:{" "}
+                  <span className={turn === "white" ? "text-zinc-100" : "text-zinc-400"}>
+                    {turn === "white" ? "Trắng" : "Đen"}
+                  </span>
+                </span>
                 <span>
                   Bạn cầm:{" "}
                   <span className="text-emerald-400 font-semibold">
@@ -866,7 +970,7 @@ export default function ChessPage() {
                 </span>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs uppercase tracking-wide text-zinc-400">
@@ -887,13 +991,13 @@ export default function ChessPage() {
                       <button
                         key={`${row}-${col}`}
                         onClick={() => handleSquareClick(row, col)}
-                        className={`relative flex items-center justify-center text-2xl md:text-3xl font-semibold border border-zinc-900/10 aspect-square ${isDark ? "bg-zinc-700" : "bg-zinc-200"
-                          } ${isSelected ? "ring-2 ring-emerald-400" : ""} ${isCheck ? "ring-2 ring-red-500" : ""
+                        className={`relative flex items-center justify-center text-3xl md:text-4xl font-semibold border border-zinc-900/10 aspect-square transition-all duration-200 cursor-pointer ${isDark ? "bg-[#779556] hover:bg-[#86a661]" : "bg-[#ebecd0] hover:bg-[#f5f6dd]"
+                          } ${isSelected ? "ring-4 ring-inset ring-yellow-400/80 bg-opacity-90" : ""} ${isCheck ? "ring-4 ring-inset ring-red-500/80" : ""
                           }`}
                       >
-                        {isLegal && <span className="absolute w-3 h-3 rounded-full bg-emerald-400/80" />}
+                        {isLegal && <span className="absolute w-3.5 h-3.5 rounded-full bg-black/20" />}
                         {piece && (
-                          <span className={piece.color === "white" ? "text-zinc-50 drop-shadow" : "text-zinc-900"}>
+                          <span className={`transition-transform duration-200 ${isSelected ? 'scale-110 drop-shadow-md' : 'drop-shadow-sm'} ${piece.color === 'white' ? 'text-white' : 'text-black opacity-90'}`}>
                             {pieceToSymbol(piece)}
                           </span>
                         )}
