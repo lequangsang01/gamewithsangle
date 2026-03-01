@@ -106,19 +106,20 @@ export async function joinRoom<T extends BaseGameRoom>(params: {
     throw new Error("Room không tồn tại");
   }
 
-  // Check max players
   const currentPlayers = Array.isArray(room.players) ? [...room.players] : [];
-  const maxPlayers = typeof room.maxPlayers === "number" ? room.maxPlayers : 2;
-  if (currentPlayers.length >= maxPlayers) {
-    throw new Error(
-      `Phòng đã đầy (tối đa ${maxPlayers} người chơi)`
-    );
-  }
 
   // Check if player already exists
   const exists = currentPlayers.find(
     (p) => normalize(p.name) === normalize(playerName)
   );
+
+  // Check max players
+  const maxPlayers = typeof room.maxPlayers === "number" ? room.maxPlayers : 2;
+  if (!exists && currentPlayers.length >= maxPlayers) {
+    throw new Error(
+      `Phòng đã đầy (tối đa ${maxPlayers} người chơi)`
+    );
+  }
 
   if (!exists) {
     let color: string | undefined;

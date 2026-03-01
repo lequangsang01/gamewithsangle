@@ -52,7 +52,7 @@ export class MQTTClient {
         this.setStatus("connected");
         // Subscribe to room topic
         const topic = `game/${roomId}/+`;
-        this.client?.subscribe(topic, { qos: 1 }, (err) => {
+        this.client?.subscribe(topic, { qos: 1 }, (err: Error | null) => {
           if (err) {
             console.error("MQTT subscribe error:", err);
             this.setStatus("error");
@@ -60,16 +60,16 @@ export class MQTTClient {
         });
       });
 
-      this.client.on("message", (topic, message) => {
+      this.client.on("message", (topic: string, message: Buffer) => {
         try {
           // Extract type from topic: game/{roomId}/{type}
           const topicParts = topic.split("/");
           const messageType = topicParts[topicParts.length - 1];
-          
+
           const data = JSON.parse(message.toString()) as MQTTMessage & { clientId?: string };
           // Add type from topic to message
           data.type = messageType;
-          
+
           // Skip messages from self
           if (data.clientId && data.clientId === this.clientId) return;
           this.onMessage?.(data);
@@ -78,7 +78,7 @@ export class MQTTClient {
         }
       });
 
-      this.client.on("error", (err) => {
+      this.client.on("error", (err: Error) => {
         console.error("MQTT error:", err);
         this.setStatus("error");
       });
@@ -110,7 +110,7 @@ export class MQTTClient {
       timestamp: Date.now(),
     });
 
-    this.client.publish(topic, message, { qos: 1 }, (err) => {
+    this.client.publish(topic, message, { qos: 1 }, (err?: Error) => {
       if (err) {
         console.error("MQTT publish error:", err);
       }

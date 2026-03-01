@@ -52,28 +52,28 @@ export async function GET(req: Request) {
 
 type PostBody =
   | {
-      action: "create";
-      playerName: string;
-      roomId?: string;
-      avatar?: string;
-    }
+    action: "create";
+    playerName: string;
+    roomId?: string;
+    avatar?: string;
+  }
   | {
-      action: "join";
-      playerName: string;
-      roomId: string;
-      avatar?: string;
-    }
+    action: "join";
+    playerName: string;
+    roomId: string;
+    avatar?: string;
+  }
   | {
-      action: "move";
-      roomId: string;
-      row: number;
-      col: number;
-      playerName: string;
-    }
+    action: "move";
+    roomId: string;
+    row: number;
+    col: number;
+    playerName: string;
+  }
   | {
-      action: "finish";
-      roomId: string;
-    };
+    action: "finish";
+    roomId: string;
+  };
 
 function checkWinner(board: (string | null)[][]): "X" | "O" | "draw" | null {
   // Check rows
@@ -156,7 +156,8 @@ export async function POST(req: Request) {
 
       // Check max players before joining
       const currentPlayers = existingRoom.players ?? [];
-      if (currentPlayers.length >= MAX_PLAYERS) {
+      const exists = currentPlayers.find((p) => normalize(p.name) === normalize(body.playerName));
+      if (!exists && currentPlayers.length >= MAX_PLAYERS) {
         return new Response(
           JSON.stringify({
             error: `Phòng đã đầy (tối đa ${MAX_PLAYERS} người chơi)`,

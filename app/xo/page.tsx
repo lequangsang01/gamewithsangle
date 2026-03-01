@@ -19,23 +19,23 @@ type RoomState = {
 
 type SocketPayload =
   | {
-      type: "move";
-      row: number;
-      col: number;
-      room?: RoomState | null;
-      playerName: string;
-      clientId?: string;
-    }
+    type: "move";
+    row: number;
+    col: number;
+    room?: RoomState | null;
+    playerName: string;
+    clientId?: string;
+  }
   | {
-      type: "room";
-      room: RoomState | null;
-      clientId?: string;
-    }
+    type: "room";
+    room: RoomState | null;
+    clientId?: string;
+  }
   | {
-      type: "reset";
-      room: RoomState | null;
-      clientId?: string;
-    };
+    type: "reset";
+    room: RoomState | null;
+    clientId?: string;
+  };
 
 const randomWordsA = ["Sáng", "Đêm", "Lửa", "Gió", "Biển", "Trăng", "Mây"];
 const randomWordsB = ["X", "O", "Tic", "Tac", "Toe", "Game"];
@@ -216,6 +216,12 @@ export default function XOPage() {
     if (message.type === "presence" && message.clientId) {
       const action = message.action as string;
       if (action === "connect") {
+        setOnlineClients((prev) => new Set([...prev, message.clientId as string]));
+        emitMQTTMessage("presence", {
+          playerName,
+          action: "iamhere",
+        });
+      } else if (action === "iamhere") {
         setOnlineClients((prev) => new Set([...prev, message.clientId as string]));
       } else if (action === "disconnect") {
         setOnlineClients((prev) => {
@@ -482,9 +488,8 @@ export default function XOPage() {
               onChange={(e) => !isLocked && setPlayerName(e.target.value)}
               placeholder="Ví dụ: Sangle"
               disabled={isLocked}
-              className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${
-                isLocked ? "opacity-60 cursor-not-allowed" : ""
-              }`}
+              className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${isLocked ? "opacity-60 cursor-not-allowed" : ""
+                }`}
             />
           </div>
           <div className="space-y-2">
@@ -494,9 +499,8 @@ export default function XOPage() {
               onChange={(e) => !isLocked && setInputRoomId(e.target.value.toUpperCase())}
               placeholder="VD: ABC123"
               disabled={isLocked}
-              className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-emerald-500 ${
-                isLocked ? "opacity-60 cursor-not-allowed" : ""
-              }`}
+              className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-emerald-500 ${isLocked ? "opacity-60 cursor-not-allowed" : ""
+                }`}
             />
           </div>
 
@@ -504,18 +508,16 @@ export default function XOPage() {
             <button
               onClick={() => handleCreateRoom()}
               disabled={isSyncing}
-              className={`flex-1 rounded-md text-sm font-medium py-2 transition-colors ${
-                isSyncing ? "bg-emerald-900 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400"
-              }`}
+              className={`flex-1 rounded-md text-sm font-medium py-2 transition-colors ${isSyncing ? "bg-emerald-900 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400"
+                }`}
             >
               Tạo phòng mới
             </button>
             <button
               onClick={handleJoinRoom}
               disabled={isSyncing}
-              className={`flex-1 rounded-md border border-zinc-700 text-sm font-medium py-2 transition-colors ${
-                isSyncing ? "text-zinc-500 cursor-not-allowed" : "hover:bg-zinc-800"
-              }`}
+              className={`flex-1 rounded-md border border-zinc-700 text-sm font-medium py-2 transition-colors ${isSyncing ? "text-zinc-500 cursor-not-allowed" : "hover:bg-zinc-800"
+                }`}
             >
               Vào phòng bằng mã
             </button>
@@ -524,9 +526,8 @@ export default function XOPage() {
           <button
             onClick={handleEndGame}
             disabled={isSyncing}
-            className={`col-span-2 rounded-md text-sm font-medium py-2 border transition-colors ${
-              isSyncing ? "border-zinc-800 text-zinc-500 cursor-wait" : "border-red-500 text-red-400 hover:bg-red-500/10"
-            }`}
+            className={`col-span-2 rounded-md text-sm font-medium py-2 border transition-colors ${isSyncing ? "border-zinc-800 text-zinc-500 cursor-wait" : "border-red-500 text-red-400 hover:bg-red-500/10"
+              }`}
           >
             Kết thúc ván / đổi ký hiệu
           </button>
@@ -562,14 +563,17 @@ export default function XOPage() {
             </div>
           </div>
 
-          {isLocked && opponent && (
-            <div className="col-span-2 text-xs text-zinc-300">
-              <span>Đối thủ: </span>
+          {opponent && (
+            <div className="col-span-2 text-xs flex items-center gap-2 bg-zinc-950/40 p-2 rounded-md border border-zinc-800">
+              <span className="text-zinc-400">Đối thủ: </span>
               <span className="font-semibold text-emerald-400">{opponent.name}</span>
-              <span className="text-zinc-500 ml-2">({opponent.symbol})</span>
+              <span className="text-zinc-500">({opponent.symbol})</span>
+              <div className="flex items-center gap-1 ml-auto">
+                <div className={`w-2 h-2 rounded-full ${onlineClients.size >= 2 ? 'bg-emerald-500' : 'bg-red-500/80'}`} />
+                <span className="text-[10px] text-zinc-500">{onlineClients.size >= 2 ? 'Online' : 'Offline'}</span>
+              </div>
             </div>
           )}
-
           {inviteUrl && (
             <div className="col-span-2 space-y-2">
               <div className="flex items-center gap-2">
@@ -613,19 +617,16 @@ export default function XOPage() {
                       key={`${row}-${col}`}
                       onClick={() => handleCellClick(row, col)}
                       disabled={isSyncing || cell !== null || turn !== playerSymbol || !!roomState?.winner}
-                      className={`aspect-square w-20 md:w-24 lg:w-28 flex items-center justify-center text-4xl md:text-5xl lg:text-6xl font-bold rounded-md border-2 transition-colors ${
-                        cell === "X"
-                          ? "bg-blue-500/20 border-blue-500 text-blue-400"
-                          : cell === "O"
+                      className={`aspect-square w-20 md:w-24 lg:w-28 flex items-center justify-center text-4xl md:text-5xl lg:text-6xl font-bold rounded-md border-2 transition-colors ${cell === "X"
+                        ? "bg-blue-500/20 border-blue-500 text-blue-400"
+                        : cell === "O"
                           ? "bg-red-500/20 border-red-500 text-red-400"
                           : "bg-zinc-800 border-zinc-700 hover:bg-zinc-700 hover:border-zinc-600"
-                      } ${
-                        isWinning ? "ring-4 ring-emerald-400" : ""
-                      } ${
-                        isSyncing || cell !== null || turn !== playerSymbol || !!roomState?.winner
+                        } ${isWinning ? "ring-4 ring-emerald-400" : ""
+                        } ${isSyncing || cell !== null || turn !== playerSymbol || !!roomState?.winner
                           ? "cursor-not-allowed opacity-60"
                           : "cursor-pointer"
-                      }`}
+                        }`}
                     >
                       {cell}
                     </button>

@@ -29,24 +29,24 @@ type RoomState = {
 
 type SocketPayload =
   | {
-      type: "move";
-      fen: string;
-      move: { from: string; to: string };
-      turn: Color;
-      room?: RoomState | null;
-      playerName: string;
-      clientId?: string;
-    }
+    type: "move";
+    fen: string;
+    move: { from: string; to: string };
+    turn: Color;
+    room?: RoomState | null;
+    playerName: string;
+    clientId?: string;
+  }
   | {
-      type: "room";
-      room: RoomState | null;
-      clientId?: string;
-    }
+    type: "room";
+    room: RoomState | null;
+    clientId?: string;
+  }
   | {
-      type: "reset";
-      room: RoomState | null;
-      clientId?: string;
-    };
+    type: "reset";
+    room: RoomState | null;
+    clientId?: string;
+  };
 
 const BOARD_SIZE = 8;
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -371,7 +371,7 @@ export default function ChessPage() {
     const poll = async () => {
       // Nếu MQTT đang connected, không cần polling (real-time qua MQTT)
       if (mqttStatus === "connected") return;
-      
+
       try {
         const res = await fetch(`/api/chess/room?roomId=${currentRoomId}`);
         if (!res.ok) return;
@@ -387,7 +387,7 @@ export default function ChessPage() {
     if (mqttStatus !== "connected") {
       poll();
     }
-    
+
     // Poll mỗi 60s để verify state (backup, không cần thiết nếu MQTT hoạt động tốt)
     const id = window.setInterval(poll, 60000);
     return () => {
@@ -448,6 +448,12 @@ export default function ChessPage() {
     if (message.type === "presence" && message.clientId) {
       const action = message.action as string;
       if (action === "connect") {
+        setOnlineClients((prev) => new Set([...prev, message.clientId as string]));
+        emitMQTTMessage("presence", {
+          playerName,
+          action: "iamhere",
+        });
+      } else if (action === "iamhere") {
         setOnlineClients((prev) => new Set([...prev, message.clientId as string]));
       } else if (action === "disconnect") {
         setOnlineClients((prev) => {
@@ -729,9 +735,8 @@ export default function ChessPage() {
                 onChange={(e) => !isLocked && setPlayerName(e.target.value)}
                 placeholder="Ví dụ: Sangle"
                 disabled={isLocked}
-                className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${
-                  isLocked ? "opacity-60 cursor-not-allowed" : ""
-                }`}
+                className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${isLocked ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
               />
             </div>
             <div className="space-y-2">
@@ -753,11 +758,10 @@ export default function ChessPage() {
                       key={icon}
                       type="button"
                       onClick={() => setAvatar(icon)}
-                      className={`w-7 h-7 flex items-center justify-center rounded-full border text-base ${
-                        avatar === icon
-                          ? "border-emerald-500 bg-emerald-500/10"
-                          : "border-zinc-700 hover:border-emerald-500"
-                      }`}
+                      className={`w-7 h-7 flex items-center justify-center rounded-full border text-base ${avatar === icon
+                        ? "border-emerald-500 bg-emerald-500/10"
+                        : "border-zinc-700 hover:border-emerald-500"
+                        }`}
                     >
                       {icon}
                     </button>
@@ -772,9 +776,8 @@ export default function ChessPage() {
                 onChange={(e) => !isLocked && setInputRoomId(e.target.value.toUpperCase())}
                 placeholder="VD: ABC123"
                 disabled={isLocked}
-                className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-emerald-500 ${
-                  isLocked ? "opacity-60 cursor-not-allowed" : ""
-                }`}
+                className={`w-full rounded-md bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm uppercase outline-none focus:ring-2 focus:ring-emerald-500 ${isLocked ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
               />
             </div>
 
@@ -782,18 +785,16 @@ export default function ChessPage() {
               <button
                 onClick={() => handleCreateRoom()}
                 disabled={isSyncing}
-                className={`flex-1 rounded-md text-sm font-medium py-2 transition-colors ${
-                  isSyncing ? "bg-emerald-900 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400"
-                }`}
+                className={`flex-1 rounded-md text-sm font-medium py-2 transition-colors ${isSyncing ? "bg-emerald-900 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-400"
+                  }`}
               >
                 Tạo phòng mới
               </button>
               <button
                 onClick={() => handleJoinRoom()}
                 disabled={isSyncing}
-                className={`flex-1 rounded-md border border-zinc-700 text-sm font-medium py-2 transition-colors ${
-                  isSyncing ? "text-zinc-500 cursor-not-allowed" : "hover:bg-zinc-800"
-                }`}
+                className={`flex-1 rounded-md border border-zinc-700 text-sm font-medium py-2 transition-colors ${isSyncing ? "text-zinc-500 cursor-not-allowed" : "hover:bg-zinc-800"
+                  }`}
               >
                 Vào phòng bằng mã
               </button>
@@ -802,9 +803,8 @@ export default function ChessPage() {
             <button
               onClick={handleEndGame}
               disabled={isSyncing}
-              className={`col-span-2 rounded-md text-sm font-medium py-2 border transition-colors ${
-                isSyncing ? "border-zinc-800 text-zinc-500 cursor-wait" : "border-red-500 text-red-400 hover:bg-red-500/10"
-              }`}
+              className={`col-span-2 rounded-md text-sm font-medium py-2 border transition-colors ${isSyncing ? "border-zinc-800 text-zinc-500 cursor-wait" : "border-red-500 text-red-400 hover:bg-red-500/10"
+                }`}
             >
               Kết thúc ván / đổi màu
             </button>
@@ -829,9 +829,9 @@ export default function ChessPage() {
                   )}
                 </div>
                 {opponentName && (
-                  <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                  <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-1">
                     {opponentAvatar && (
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700">
                         {opponentAvatar}
                       </span>
                     )}
@@ -839,14 +839,18 @@ export default function ChessPage() {
                       Đối thủ:{" "}
                       <span className="text-zinc-100 font-medium">{opponentName}</span>
                     </span>
+                    <div className="flex items-center gap-1 ml-2">
+                      <div className={`w-1.5 h-1.5 rounded-full ${onlineClients.size >= 2 ? 'bg-emerald-500' : 'bg-red-500/80'}`} />
+                      <span className="text-[10px] text-zinc-500">{onlineClients.size >= 2 ? 'Online' : 'Offline'}</span>
+                    </div>
                   </div>
                 )}
               </div>
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-3">
-                <span className={mqttStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
-                  MQTT: {mqttStatus}
-                </span>
+                  <span className={mqttStatus === "connected" ? "text-emerald-400" : "text-zinc-500"}>
+                    MQTT: {mqttStatus}
+                  </span>
                   <span>
                     Lượt đi:{" "}
                     <span className={turn === "white" ? "text-zinc-100" : "text-zinc-400"}>
@@ -883,11 +887,9 @@ export default function ChessPage() {
                       <button
                         key={`${row}-${col}`}
                         onClick={() => handleSquareClick(row, col)}
-                        className={`relative flex items-center justify-center text-2xl md:text-3xl font-semibold border border-zinc-900/10 aspect-square ${
-                          isDark ? "bg-zinc-700" : "bg-zinc-200"
-                        } ${isSelected ? "ring-2 ring-emerald-400" : ""} ${
-                          isCheck ? "ring-2 ring-red-500" : ""
-                        }`}
+                        className={`relative flex items-center justify-center text-2xl md:text-3xl font-semibold border border-zinc-900/10 aspect-square ${isDark ? "bg-zinc-700" : "bg-zinc-200"
+                          } ${isSelected ? "ring-2 ring-emerald-400" : ""} ${isCheck ? "ring-2 ring-red-500" : ""
+                          }`}
                       >
                         {isLegal && <span className="absolute w-3 h-3 rounded-full bg-emerald-400/80" />}
                         {piece && (
