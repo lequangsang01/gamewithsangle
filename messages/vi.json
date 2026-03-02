@@ -1,0 +1,143 @@
+{
+  "common": {
+    "appName": "Game With Sangle",
+    "loading": "Đang tải...",
+    "error": "Lỗi",
+    "success": "Thành công",
+    "copy": "Sao chép",
+    "copied": "Đã sao chép",
+    "close": "Đóng",
+    "save": "Lưu",
+    "cancel": "Hủy",
+    "edit": "Chỉnh sửa",
+    "done": "Xong",
+    "room": "Phòng",
+    "player": "Người chơi",
+    "opponent": "Đối thủ",
+    "vs": "VS",
+    "available": "Đang mở",
+    "join": "Vào",
+    "create": "Tạo",
+    "reset": "Làm mới"
+  },
+  "home": {
+    "title": "Game With Sangle",
+    "description": "Danh sách game nhiều người chơi. Bắt đầu với cờ vua.",
+    "games": {
+      "chess": {
+        "name": "Cờ vua",
+        "description": "Chơi cờ vua online 1vs1, tạo phòng hoặc nhập mã phòng để vào chơi."
+      },
+      "xo": {
+        "name": "Tic-Tac-Toe (XO)",
+        "description": "Chơi XO online 1vs1, tạo phòng hoặc nhập mã phòng để vào chơi."
+      }
+    }
+  },
+  "chess": {
+    "title": "Cờ vua realtime (beta)",
+    "description": "Trang tự sinh tên và mã phòng. Chia sẻ mã cho bạn bè để chơi 1vs1, nước đi sẽ được đồng bộ qua MongoDB + WebSocket. Luật sử dụng chess.js nên đảm bảo quốc tế.",
+    "waitingForRoom": "Đang chờ tạo phòng...",
+    "playerName": "Tên người chơi (lưu local)",
+    "playerNamePlaceholder": "Ví dụ: Sangle",
+    "avatar": "Avatar",
+    "random": "Random",
+    "roomCode": "Mã phòng (auto tạo)",
+    "roomCodePlaceholder": "VD: ABC123",
+    "createRoom": "Tạo phòng mới",
+    "joinRoom": "Vào phòng bằng mã",
+    "endGame": "Kết thúc ván / đổi màu",
+    "noRoom": "Chưa có",
+    "turn": "Lượt đi",
+    "white": "Trắng",
+    "black": "Đen",
+    "youPlay": "Bạn cầm",
+    "orientation": "Hướng nhìn",
+    "status": {
+      "checkmate": "Chiếu hết! {winner} giành chiến thắng.",
+      "draw": "Ván đấu hoà.",
+      "inCheck": "{color} đang bị chiếu, cần xử lý!",
+      "whiteTurn": "Tới lượt quân trắng.",
+      "blackTurn": "Tới lượt quân đen.",
+      "cannotMove": "Bạn chỉ được di chuyển quân của mình.",
+      "notYourTurn": "Chưa tới lượt của bạn.",
+      "refreshed": "Đã làm mới bàn cờ."
+    },
+    "confirmReset": "Kết thúc ván, xoá lịch sử và đổi màu cho ván tiếp?",
+    "activeRooms": "Phòng đang có người chơi",
+    "noActiveRooms": "Chưa có phòng công khai nào.",
+    "inviteFriends": "Mời bạn bè bằng link / QR",
+    "inviteDescription": "Gửi link này cho đối thủ, họ chỉ cần mở là sẽ tự vào đúng phòng cờ vua của bạn.",
+    "inviteLinkCopied": "Đã sao chép đường dẫn mời.",
+    "qrCode": "Quét QR để vào phòng:",
+    "gameFlow": "Luồng chơi",
+    "gameFlowSteps": {
+      "step1": "Trang tự tạo phòng và tên ngẫu nhiên khi bạn mở.",
+      "step2": "Chia sẻ mã phòng cho người thứ hai, người đó sẽ cầm đen và bàn xoay phù hợp.",
+      "step3": "Socket realtime giúp nước đi hiển thị tức thì trên hai máy.",
+      "step4": "Bấm \"Kết thúc ván\" để xoá lịch sử, reset bàn và đổi màu ở ván tiếp theo."
+    },
+    "capturedPieces": "Quân đã bị ăn",
+    "whiteCaptured": "Trắng đã ăn",
+    "blackCaptured": "Đen đã ăn",
+    "noCaptured": "Chưa có",
+    "moveHistory": "Lịch sử nước đi",
+    "noMoves": "Chưa có nước đi nào.",
+    "alerts": {
+      "enterName": "Nhập tên người chơi trước khi tạo phòng.",
+      "enterRoomCode": "Nhập mã phòng để vào.",
+      "createRoomError": "Không tạo được phòng, thử lại nhé.",
+      "joinRoomError": "Không vào được phòng, thử lại sau.",
+      "playFirst": "Hãy tạo hoặc vào phòng trước khi chơi.",
+      "copyError": "Không thể sao chép, hãy copy thủ công.",
+      "copyLinkError": "Không thể sao chép link, hãy copy thủ công."
+    }
+  },
+  "xo": {
+    "title": "Tic-Tac-Toe (XO) realtime",
+    "description": "Trang tự sinh tên và mã phòng. Chia sẻ mã cho bạn bè để chơi 1vs1, nước đi sẽ được đồng bộ qua MongoDB + WebSocket.",
+    "waitingForRoom": "Đang chờ tạo phòng...",
+    "playerName": "Tên người chơi (lưu local)",
+    "playerNamePlaceholder": "Ví dụ: Sangle",
+    "roomCode": "Mã phòng (auto tạo)",
+    "roomCodePlaceholder": "VD: ABC123",
+    "createRoom": "Tạo phòng mới",
+    "joinRoom": "Vào phòng bằng mã",
+    "endGame": "Kết thúc ván / đổi ký hiệu",
+    "noRoom": "Chưa có",
+    "turn": "Lượt đi",
+    "youPlay": "Bạn cầm",
+    "status": {
+      "draw": "Ván đấu hoà!",
+      "winner": "{symbol} giành chiến thắng!",
+      "turn": "Tới lượt {symbol}",
+      "waiting": "Đang chờ người chơi...",
+      "cellTaken": "Ô này đã được đánh!",
+      "notYourTurn": "Chưa tới lượt của bạn!",
+      "gameEnded": "Ván đấu đã kết thúc!",
+      "refreshed": "Đã làm mới bàn chơi."
+    },
+    "confirmReset": "Kết thúc ván, xoá lịch sử và đổi ký hiệu cho ván tiếp?",
+    "inviteLink": "Link mời:",
+    "alerts": {
+      "enterName": "Nhập tên người chơi trước khi tạo phòng.",
+      "enterRoomCode": "Nhập mã phòng để vào.",
+      "createRoomError": "Không tạo được phòng, thử lại nhé.",
+      "joinRoomError": "Không vào được phòng, thử lại sau.",
+      "playFirst": "Hãy tạo hoặc vào phòng trước khi chơi.",
+      "moveError": "Không thể thực hiện nước đi",
+      "copyError": "Không thể sao chép, hãy copy thủ công.",
+      "copyLinkError": "Không thể sao chép link, hãy copy thủ công."
+    }
+  },
+  "theme": {
+    "light": "Sáng",
+    "dark": "Tối",
+    "system": "Hệ thống"
+  },
+  "language": {
+    "vi": "Tiếng Việt",
+    "en": "English"
+  }
+}
+

@@ -1,0 +1,143 @@
+{
+  "common": {
+    "appName": "Game With Sangle",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close",
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "done": "Done",
+    "room": "Room",
+    "player": "Player",
+    "opponent": "Opponent",
+    "vs": "VS",
+    "available": "Available",
+    "join": "Join",
+    "create": "Create",
+    "reset": "Reset"
+  },
+  "home": {
+    "title": "Game With Sangle",
+    "description": "List of multiplayer games. Starting with chess.",
+    "games": {
+      "chess": {
+        "name": "Chess",
+        "description": "Play chess online 1vs1, create a room or enter room code to join."
+      },
+      "xo": {
+        "name": "Tic-Tac-Toe (XO)",
+        "description": "Play XO online 1vs1, create a room or enter room code to join."
+      }
+    }
+  },
+  "chess": {
+    "title": "Realtime Chess (beta)",
+    "description": "Page auto-generates name and room code. Share code with friends to play 1vs1, moves are synced via MongoDB + WebSocket. Uses chess.js rules for international standards.",
+    "waitingForRoom": "Waiting to create room...",
+    "playerName": "Player name (saved locally)",
+    "playerNamePlaceholder": "Example: Sangle",
+    "avatar": "Avatar",
+    "random": "Random",
+    "roomCode": "Room code (auto-generated)",
+    "roomCodePlaceholder": "E.g: ABC123",
+    "createRoom": "Create new room",
+    "joinRoom": "Join room by code",
+    "endGame": "End game / switch colors",
+    "noRoom": "None",
+    "turn": "Turn",
+    "white": "White",
+    "black": "Black",
+    "youPlay": "You play",
+    "orientation": "Orientation",
+    "status": {
+      "checkmate": "Checkmate! {winner} wins.",
+      "draw": "Game is a draw.",
+      "inCheck": "{color} is in check, must respond!",
+      "whiteTurn": "White's turn.",
+      "blackTurn": "Black's turn.",
+      "cannotMove": "You can only move your own pieces.",
+      "notYourTurn": "Not your turn yet.",
+      "refreshed": "Board refreshed."
+    },
+    "confirmReset": "End game, clear history and switch colors for next game?",
+    "activeRooms": "Active rooms",
+    "noActiveRooms": "No public rooms available.",
+    "inviteFriends": "Invite friends via link / QR",
+    "inviteDescription": "Send this link to your opponent, they just need to open it to automatically join your chess room.",
+    "inviteLinkCopied": "Invite link copied.",
+    "qrCode": "Scan QR to join room:",
+    "gameFlow": "How to play",
+    "gameFlowSteps": {
+      "step1": "Page auto-creates room and random name when you open it.",
+      "step2": "Share room code with second player, they will play black and board will rotate accordingly.",
+      "step3": "Realtime socket makes moves appear instantly on both devices.",
+      "step4": "Click \"End game\" to clear history, reset board and switch colors for next game."
+    },
+    "capturedPieces": "Captured pieces",
+    "whiteCaptured": "White captured",
+    "blackCaptured": "Black captured",
+    "noCaptured": "None",
+    "moveHistory": "Move history",
+    "noMoves": "No moves yet.",
+    "alerts": {
+      "enterName": "Enter player name before creating room.",
+      "enterRoomCode": "Enter room code to join.",
+      "createRoomError": "Could not create room, please try again.",
+      "joinRoomError": "Could not join room, please try again later.",
+      "playFirst": "Please create or join a room before playing.",
+      "copyError": "Could not copy, please copy manually.",
+      "copyLinkError": "Could not copy link, please copy manually."
+    }
+  },
+  "xo": {
+    "title": "Realtime Tic-Tac-Toe (XO)",
+    "description": "Page auto-generates name and room code. Share code with friends to play 1vs1, moves are synced via MongoDB + WebSocket.",
+    "waitingForRoom": "Waiting to create room...",
+    "playerName": "Player name (saved locally)",
+    "playerNamePlaceholder": "Example: Sangle",
+    "roomCode": "Room code (auto-generated)",
+    "roomCodePlaceholder": "E.g: ABC123",
+    "createRoom": "Create new room",
+    "joinRoom": "Join room by code",
+    "endGame": "End game / switch symbol",
+    "noRoom": "None",
+    "turn": "Turn",
+    "youPlay": "You play",
+    "status": {
+      "draw": "Game is a draw!",
+      "winner": "{symbol} wins!",
+      "turn": "{symbol}'s turn",
+      "waiting": "Waiting for players...",
+      "cellTaken": "This cell is already taken!",
+      "notYourTurn": "Not your turn yet!",
+      "gameEnded": "Game has ended!",
+      "refreshed": "Board refreshed."
+    },
+    "confirmReset": "End game, clear history and switch symbol for next game?",
+    "inviteLink": "Invite link:",
+    "alerts": {
+      "enterName": "Enter player name before creating room.",
+      "enterRoomCode": "Enter room code to join.",
+      "createRoomError": "Could not create room, please try again.",
+      "joinRoomError": "Could not join room, please try again later.",
+      "playFirst": "Please create or join a room before playing.",
+      "moveError": "Could not make move",
+      "copyError": "Could not copy, please copy manually.",
+      "copyLinkError": "Could not copy link, please copy manually."
+    }
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "language": {
+    "vi": "Vietnamese",
+    "en": "English"
+  }
+}
+

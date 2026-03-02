@@ -66,6 +66,8 @@ export class MQTTClient {
           const topicParts = topic.split("/");
           const messageType = topicParts[topicParts.length - 1];
 
+          if (!messageType) return;
+
           const data = JSON.parse(message.toString()) as MQTTMessage & { clientId?: string };
           // Add type from topic to message
           data.type = messageType;
@@ -110,7 +112,7 @@ export class MQTTClient {
       timestamp: Date.now(),
     });
 
-    this.client.publish(topic, message, { qos: 1 }, (err?: Error) => {
+    this.client.publish(topic, message, { qos: 1 }, (err?: Error | null) => {
       if (err) {
         console.error("MQTT publish error:", err);
       }
